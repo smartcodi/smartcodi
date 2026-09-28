@@ -584,6 +584,28 @@ export async function case2(run){
     await until(async () => !(await page.locator('#assist').isVisible()), '도우미가 안 닫힘');
     await cleanupCase(page, { company:'(없음)', contacts:[CARD_NAME], accounts:[CARD_ORG] });
   });
+  await run.step('C2-28', async () => {
+    // 새 과제의 업체명: 소공인 기관만 목록에 있고(공급기업 없음), «+ 새 소공인 기관 등록…»으로 만들면 그 기관이 선택된다
+    await tab(page, 'board');
+    await page.locator('#newBtn').click();
+    const sel = modal(page).locator('#nf-company');
+    if ((await sel.evaluate(n => n.tagName)) !== 'SELECT') fail('업체명이 선택 목록이 아님');
+    const accs = await docsOf(page, 'accounts');
+    const vals = await sel.locator('option').evaluateAll(os => os.map(o => o.value));
+    const bad = vals.filter(v => v && v !== '__new' && accs[v]?.type !== 'sogongin');
+    if (bad.length) fail('소공인 아닌 기관이 목록에 있음: ' + bad.map(v => accs[v]?.name).join(', '));
+    if (!vals.includes(await findId(page, 'accounts', d => d.name === CO))) fail('소공인 기관이 목록에 없음');
+    if (vals.includes(await findId(page, 'accounts', d => d.name === SUP))) fail('공급기업이 목록에 있음');
+    await sel.selectOption('__new');
+    await until(async () => (await page.locator('.modal').count()) === 2, '새 기관 창이 안 열림');
+    if ((await modal(page).locator('#ff-type').inputValue()) !== 'sogongin') fail('새 기관 창 유형이 소공인이 아님');
+    await modal(page).locator('#ff-name').fill('[테스트] 목록에서 만든 업체');
+    await H.saveModal(page);
+    const nid = await until(() => findId(page, 'accounts', d => d.name === '[테스트] 목록에서 만든 업체' && d.type === 'sogongin'), '새 소공인 기관 저장 안 됨');
+    await until(async () => (await page.locator('#nf-company').inputValue()) === nid, '새 기관이 업체로 선택되지 않음');
+    await H.closeModals(page);
+    await cleanupCase(page, { company:'(없음)', accounts:['[테스트] 목록에서 만든 업체'] });
+  });
   let m;
   await run.step('C2-06', async () => {
     m = await openSend(page, CO, 3);

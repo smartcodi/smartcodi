@@ -104,7 +104,9 @@ export async function addProject(page, p){
   await tab(page, 'board');
   await page.locator('#newBtn').click();
   const m = modal(page);
-  await m.locator('#nf-company').fill(p.company);
+  const aid = await findId(page, 'accounts', d => d.name === p.company && d.type === 'sogongin');
+  if (!aid) fail('소공인 기관 없음: ' + p.company);
+  await m.locator('#nf-company').selectOption(aid);   // 업체 = 소공인 기관 선택(자유 입력 없음)
   await m.locator('#nf-cycle').fill(p.cycle);
   if (p.notice) await m.locator('#nf-notice').selectOption(p.notice);
   for (const [r, [org, name]] of Object.entries(p.roles || {})){

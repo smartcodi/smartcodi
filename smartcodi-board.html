@@ -5590,12 +5590,17 @@ function openNew(){
   const g = el('div','mgrid');
   const field = (k, label, node) => { const f = el('div','mf'); const l = el('label', null, label); l.htmlFor = 'nf-' + k; node.id = 'nf-' + k; f.append(l, node); g.append(f); return node; };
 
-  // 업체명: 소공인 기관 목록에서 고르거나 새 이름 입력(저장 시 소공인 기관 자동 생성)
-  const dl = document.createElement('datalist'); dl.id = 'nf-company-list';
-  for (const [,a] of state.accounts) if (a.type === 'sogongin') dl.append(new Option(a.name, a.name));
-  const company = field('company', '업체명 (소공인)', document.createElement('input'));
-  company.setAttribute('list', dl.id); company.placeholder = '등록된 소공인 기관 또는 새 업체명';
-  m.append(dl);
+  // 업체명: 소공인 기관만 고른다(자유 입력 없음 — 다른 유형 기관이나 오타가 소공인으로 생기지 않게).
+  // 목록에 없으면 «+ 새 소공인 기관 등록…»으로 기관 창을 열고, 저장하면 그 기관이 선택된다.
+  const company = field('company', '업체명 (소공인 기관)', document.createElement('select'));
+  const fillCompany = sel => {
+    company.replaceChildren(new Option('소공인 기관 선택…', ''));
+    for (const [aid, a] of [...state.accounts.entries()].filter(([, a]) => a.type === 'sogongin').sort((x, y) => x[1].name.localeCompare(y[1].name, 'ko')))
+      company.append(new Option(a.name, aid));
+    company.append(new Option('+ 새 소공인 기관 등록…', '__new'));
+    company.value = sel || '';
+  };
+  fillCompany('');
   // 연도·차수: 목록에서 고르거나 직접 입력. 목록 = 이미 쓰는 차수 + 사업 규칙 연도·올해의 «연도-1»·«연도-2»(최신 먼저)
   const cdl = document.createElement('datalist'); cdl.id = 'nf-cycle-list';
   const years = new Set([String(new Date().getFullYear()), ...state.programs.keys()]);
@@ -5616,13 +5621,20 @@ function openNew(){
   }
   m.append(g);
 
-  // 업체명이 주소록 소공인 기관과 일치하면 그 기관 담당자를 소공인 칸 기본값으로
-  const matchAcc = () => [...state.accounts.entries()].find(([,a]) => a.type === 'sogongin' && a.name === company.value.trim());
-  company.addEventListener('change', () => {
-    const hit = matchAcc();
-    if (!hit || sels.sogongin.value) return;
-    const people = peopleOfType('sogongin').filter(x => x.c.accountId === hit[0]);
+  // 기관을 고르면 그 기관 담당자가 한 명일 때 소공인 담당자 칸 기본값으로
+  const pickPerson = () => {
+    if (!company.value || company.value === '__new' || sels.sogongin.value) return;
+    const people = peopleOfType('sogongin').filter(x => x.c.accountId === company.value);
     if (people.length === 1) sels.sogongin.value = people[0].id;
+  };
+  company.addEventListener('change', () => {
+    if (company.value !== '__new') return pickPerson();
+    company.value = '';
+    openAccountForm(null, { type:'sogongin' }, aid => {
+      if (state.accounts.get(aid)?.type !== 'sogongin'){ err.hidden = false; err.textContent = '소공인이 아닌 기관은 업체로 고를 수 없습니다.'; return; }
+      err.hidden = true;
+      fillCompany(aid);
+    });
   });
 
   const note = el('p','hint');
@@ -5642,22 +5654,20 @@ function openNew(){
   cancel.addEventListener('click', close);
   scrim.addEventListener('click', close);
   ok.addEventListener('click', () => {
-    let name = company.value.trim();
     const cyc = cycle.value.trim();
     const sgCid = sels.sogongin.value;
-    if (!name && sgCid) name = snapshotOf(sgCid)?.org || '';
-    if (!name || !cyc){ err.hidden = false; err.textContent = '업체명과 연도·차수는 반드시 입력해 주세요.'; return; }
+    let aid = company.value && company.value !== '__new' ? company.value : '';
+    if (!aid && sgCid) aid = snapshotOf(sgCid)?.accountId || '';   // 업체를 안 골랐으면 소공인 담당자의 소속 기관
+    const name = state.accounts.get(aid)?.name || '';
+    if (!aid || !name || !cyc){ err.hidden = false; err.textContent = '업체(소공인 기관)와 연도·차수는 반드시 골라 주세요.'; return; }
 
     const contacts = {};
     for (const r of ROLE_ORDER) contacts[r] = sels[r].value ? snapshotOf(sels[r].value) : EMPTY_CONTACT();
     if (!sgCid){
-      // 소공인 담당자 미지정: 기관만 연결(없으면 새로 만든다) — 업체명이 기관명과 함께 관리된다
-      let hit = matchAcc();
-      let aid = hit ? hit[0] : null;
-      if (!aid){ aid = newId('a'); saveAccount(aid, { type:'sogongin', name }); }
+      // 소공인 담당자 미지정: 고른 기관만 연결 — 업체명이 기관명과 함께 관리된다
       contacts.sogongin = Object.assign(EMPTY_CONTACT(), { accountId:aid, org:name });
-    } else if (contacts.sogongin.org && contacts.sogongin.org !== name){
-      err.hidden = false; err.textContent = '업체명(' + name + ')과 소공인 담당자의 소속(' + contacts.sogongin.org + ')이 다릅니다. 둘 중 하나를 맞춰 주세요.';
+    } else if (contacts.sogongin.accountId !== aid){
+      err.hidden = false; err.textContent = '업체(' + name + ')와 소공인 담당자의 소속(' + (contacts.sogongin.org || '기관 없음') + ')이 다릅니다. 둘 중 하나를 맞춰 주세요.';
       return;
     }
     const id = newId('p');

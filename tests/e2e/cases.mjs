@@ -624,6 +624,72 @@ export async function case2(run){
     await reopen({});
     await tab(page, 'board');
   });
+  // 도우미로 양식 초안 작성 → 단계 산출물로 등록 (C2-30·31)
+  const askDraft = async text => {
+    const n0 = await page.locator('#assist .dprev').count();
+    await page.locator('#as-input').fill(text); await page.locator('#as-input').press('Enter');
+    try { await until(async () => (await page.locator('#assist .dprev').count()) > n0, '초안 미리보기가 안 뜸', 15000); }
+    catch (e){ fail('초안 미리보기가 안 뜸: ' + text + ' / 마지막 말풍선: ' + (await page.locator('#assist .abub').last().innerText().catch(() => '?')).slice(0, 200)); }
+    return page.locator('#assist .dprev').last();
+  };
+  const stepOf = async (n) => (await docsOf(page, 'projects'))[await projectId(page, CO)].steps[String(n)];
+  const closeAssist = async () => { if (await page.locator('#assist').isVisible()) await page.locator('#assist').getByRole('button', { name:'닫기' }).click(); };
+  await run.step('C2-30', async () => {
+    try {
+      await tab(page, 'board');
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const docsBefore = JSON.stringify((await stepOf(2)).docs || {});
+      const before = await page.evaluate(() => window.__mock.samples.length);
+      const pv = await askDraft(CO + ' 2차 수행일지 써 줘. 오늘 방문에서 용접 불량 원인 논의함');
+      const calls = await page.evaluate(i => window.__mock.samples.slice(i), before);
+      const w = calls.find(c => c.prompt.startsWith('[작성]'));
+      if (!w) fail('작성 호출 없음');
+      for (const t of ['수행일지·현장진단표 (2차)', '[칸 목록]', '코디네이팅 활동요약', '[근거]', '[사용자가 알려 준 내용]', '용접 불량 원인']) if (!w.prompt.includes(t)) fail('작성 프롬프트에 없음: ' + t);
+      await hasText(pv, '(목) 작성 — 코디네이팅 활동요약 · 용접 불량 원인 논의 반영');
+      await hasText(page.locator('#assist .abub.sys').last(), '(목) 수행시간을 알려 주세요');
+      await pv.getByRole('button', { name:'2단계 산출물로 등록' }).click();
+      await until(async () => ((await stepOf(2)).outputs || []).length === 1, '2단계 산출물 등록 안 됨');
+      const o = (await stepOf(2)).outputs[0];
+      if (o.name !== '수행일지·현장진단표 (2차) 초안 v1' || o.formId !== 'log2' || !o.draft?.sections?.length) fail('등록 내용: ' + JSON.stringify({ name:o.name, formId:o.formId }));
+      if (JSON.stringify((await stepOf(2)).docs || {}) !== docsBefore) fail('산출물 체크가 자동으로 바뀜');
+      await pv.getByRole('button', { name:'알려 준 내용을 단계 메모로 저장' }).click();
+      await until(async () => ((await stepOf(2)).notes || []).some(x => x.text.startsWith('(도우미 대화)') && x.text.includes('용접 불량 원인')), '대화 내용이 메모로 안 남음');
+      await page.locator('#assist').getByRole('button', { name:'닫기' }).click();
+      await H.openStep(page, CO, 2);
+      const row = stepBody(page, 2).locator('.pout', { hasText:'초안 v1' });
+      const dl0 = await H.downloadCount(page);
+      await row.getByRole('button', { name:'Word로 받기' }).click();
+      const d = await H.nextDownload(page, dl0);
+      const text = H.docxText(d.b64);
+      if (!d.filename.endsWith('.docx') || !text.includes('(목) 작성 — 코디네이팅 활동요약') || !text.includes('보드 도우미가')) fail('Word 내용: ' + d.filename);
+      await row.getByRole('button', { name:'보기' }).click();
+      await until(() => stepBody(page, 2).locator('.pout .dview').count(), '초안 보기가 안 펼쳐짐');
+      await H.closeDrawer(page);
+    } finally { await closeAssist(); }
+  });
+  await run.step('C2-31', async () => {
+    try {
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      const pv1 = await askDraft(CO + ' 4차 수행일지 써 줘');
+      await hasText(pv1, '8단계');
+      await pv1.getByRole('button', { name:'8단계 산출물로 등록' }).click();
+      const pv2 = await askDraft(CO + ' 4차 수행일지 다시 써 줘');
+      await pv2.getByRole('button', { name:'8단계 산출물로 등록' }).click();
+      const pv3 = await askDraft(CO + ' 결과보고서 써 줘');
+      await pv3.getByRole('button', { name:'8단계 산출물로 등록' }).click();
+      await until(async () => ((await stepOf(8)).outputs || []).length === 3, '8단계 산출물 3건이 아님');
+      const names = (await stepOf(8)).outputs.map(o => o.name);
+      for (const n of ['수행일지·현장진단표 (4차) 초안 v1', '수행일지·현장진단표 (4차) 초안 v2', '결과보고서 초안 v1']) if (!names.includes(n)) fail('8단계 산출물에 없음: ' + n + ' / ' + names.join(', '));
+      const log4 = (await stepOf(8)).outputs.find(o => o.formId === 'log4');
+      if (!JSON.stringify(log4.draft).includes('4차')) fail('4차 초안에 차수 표시 없음');
+      await page.locator('#assist').getByRole('button', { name:'닫기' }).click();
+      await H.openStep(page, CO, 8);
+      await hasText(stepBody(page, 8).locator('.diag .subhead').first(), '현장진단표 항목 (4차)');
+      await hasText(stepBody(page, 8).locator('.forms'), '수행일지·현장진단표 (4차)');
+      await H.closeDrawer(page);
+    } finally { await closeAssist(); }
+  });
   let m;
   await run.step('C2-06', async () => {
     m = await openSend(page, CO, 3);

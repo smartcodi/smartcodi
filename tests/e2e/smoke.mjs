@@ -1,0 +1,14 @@
+import { chromium } from 'playwright';
+import { start } from './server.mjs';
+const { server, url } = await start();
+const browser = await chromium.launch({ channel:'chrome' });
+const ctx = await browser.newContext({ timezoneId:'Asia/Seoul', locale:'ko-KR', viewport:{ width:1400, height:900 } });
+const page = await ctx.newPage();
+const errs = [];
+page.on('pageerror', e => errs.push(e.message));
+page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+await page.goto(url);
+await page.waitForTimeout(800);
+console.log('title', await page.title(), '| cols', await page.locator('.col').count(), '| notice', await page.locator('#notice').isHidden());
+console.log('errors', errs);
+await browser.close(); server.close();

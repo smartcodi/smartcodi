@@ -234,6 +234,14 @@ main{flex:1 1 auto;overflow:auto;padding:14px 16px 18px;-webkit-overflow-scrolli
 .abub.bot{align-self:flex-start;background:var(--surface-2);border:1px solid var(--line-soft)}
 .abub.sys{align-self:stretch;max-width:none;font-size:12px;color:var(--ink-2);background:color-mix(in oklab,var(--warn) 8%,var(--surface));border:1px solid color-mix(in oklab,var(--warn) 22%,var(--line))}
 .abub .cardbox{white-space:normal;margin-top:8px}
+.abub .dprev{white-space:normal;margin-top:8px}
+.dview details{border:1px solid var(--line-soft);border-radius:7px;margin-top:6px;background:var(--surface)}
+.dview summary{cursor:pointer;padding:6px 9px;font-size:12px;font-weight:600;color:var(--ink-2)}
+.dview table{border-collapse:collapse;width:100%;font-size:12px}
+.dview td{padding:5px 8px;border-top:1px solid var(--line-soft);vertical-align:top;white-space:pre-wrap;word-break:break-word}
+.dview td.co{width:32%;font-weight:600;color:var(--ink-2)}
+.outs{display:flex;flex-direction:column;gap:6px}
+.pout .lact{align-items:center}
 .abub .cardbox .kv i{width:60px}
 .afoot{border-top:1px solid var(--line);padding:10px 12px;display:flex;flex-direction:column;gap:6px}
 .afoot textarea{border:1px solid var(--line);background:var(--surface-2);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;min-height:44px;max-height:160px;font-family:inherit}
@@ -876,6 +884,7 @@ const FORMS = [
   { id:'log1',   name:'수행일지·현장진단표 (1차)', step:1, round:1, pdf:'forms/log.pdf',    hwp:LOG_HWP, section:'수행보고서(1차)' },
   { id:'log2',   name:'수행일지·현장진단표 (2차)', step:2, round:2, pdf:'forms/log.pdf',    hwp:LOG_HWP, section:'수행보고서(2차)' },
   { id:'log3',   name:'수행일지·현장진단표 (3차)', step:7, round:3, pdf:'forms/log.pdf',    hwp:LOG_HWP, section:'수행보고서(3차)' },
+  { id:'log4',   name:'수행일지·현장진단표 (4차)', step:8, round:4, pdf:'forms/log.pdf',    hwp:LOG_HWP, section:'수행보고서(4차) — 원본 양식에 4차 없음, 3차 구조로 작성' },   // 사용자 결정 2026-09-29
   { id:'plan',   name:'사업계획서 (총괄표·상세)',   step:4,           pdf:'forms/plan.pdf',   hwp:'1. 소공인 사업계획서(총괄표, 상세).hwp' },
   { id:'result', name:'결과보고서',                 step:8,           pdf:'forms/result.pdf', hwp:'3. 소공인 코디네이터 결과보고서.hwp' },
   { id:'cases',  name:'실습 교육 제공 사례 (참고)', steps:[3,4], ref:true, pdf:'forms/cases.pdf' },
@@ -908,9 +917,10 @@ const DIAG = {
       ['⑤ 사업비 (국비/자부담 현금/현물)', '최종 확정 금액을 원 단위까지'],
       ['향후 사후관리 계획 (코디네이터 소견)', '협약 이후 사후관리 주기 (예: 분기 1회 점검)']],
 };
-/* 진단 항목 입력값: steps[단계].diag[항목명]. 방문 단계 → 진단 차수 (4차 방문은 진단표 없음) */
-const DIAG_ROUND = { 1:1, 2:2, 7:3 };
-const DIAG_STEP = { 1:1, 2:2, 3:7 };
+DIAG[4] = DIAG[3];   // 4차(8단계)는 원본 양식에 없어 3차 구조를 쓴다(사용자 결정 2026-09-29)
+/* 진단 항목 입력값: steps[단계].diag[항목명]. 방문 단계 → 진단 차수 */
+const DIAG_ROUND = { 1:1, 2:2, 7:3, 8:4 };
+const DIAG_STEP = { 1:1, 2:2, 3:7, 4:8 };
 const diagVal = (p, round, label) => String(p.steps?.[String(DIAG_STEP[round])]?.diag?.[label] || '').trim();
 /** 결과보고서 근거용 진단 입력 줄. refs = [[차수, DIAG 행 번호]] */
 const diagLines = (p, refs) => refs.map(([r, i]) => { const k = DIAG[r][i][0], v = diagVal(p, r, k); return v ? '· [' + r + '차 진단 · ' + k + '] ' + v : null; }).filter(Boolean);
@@ -988,9 +998,10 @@ function buildDraft(form, p, pid){
       ['대표자', bareName(sg)], ['담당 코디네이터', bareName(co)],
     ];
     if (form.round === 2) diag.push(['이전 코디네이팅 요약', bodyCell(evidence(p, [1]), '1차 현장진단표의 종합 의견 요약')]);
-    if (form.round === 3) diag.push(['① 이전 코디네이팅 요약', bodyCell(evidence(p, [1, 2]), '1차·2차 현장진단표의 종합 의견 요약')]);
+    if (form.round >= 3) diag.push(['① 이전 코디네이팅 요약', form.round === 3 ? bodyCell(evidence(p, [1, 2]), '1차·2차 현장진단표의 종합 의견 요약')
+      : bodyCell(evidence(p, [1, 2, 7]), '1~3차 현장진단표의 종합 의견 요약')]);
     for (const [k, g] of DIAG[form.round]) diag.push([k, diagVal(p, form.round, k) || '미확인 — ' + g]);
-    if (form.round === 3){
+    if (form.round >= 3){   // 3차·4차(3차 구조)
       diag.splice(diag.findIndex(r => r[0].startsWith('⑤')), 0,
         ['④ 도입 장비·소프트웨어', (spOrg ? '공급기업: ' + spOrg + '\n' : '') + bodyCell([...assetLines(pid, null, true), ...evidence(p, [3, 6])], '최종 견적서 기준 장비·SW명')]);
       const s4 = st(4);
@@ -3364,11 +3375,20 @@ function cardBtn(){
 const assist = { open:false, turns:[], card:null, lastReview:null, imgs:[], busy:null, maxImg:0, types:[], n:0 };
 let sampleState = 'pending';   // use('sample') 결과: pending → ready | none
 const ASSIST_TURNS = 12;   // 보내는 이전 대화 턴 수(오래된 것부터 버림)
+const DRAFT_FORMS = () => FORMS.filter(f => !f.ref);   // 도우미가 쓸 수 있는 양식: 수행일지 1~4차·사업계획서·결과보고서
 function assistRules(){
   const orgs = [...state.accounts.values()].slice(0, 150).map(a => '- ' + a.name + ' (' + (ROLES[a.type]?.label || a.type) + ')');
+  const projs = [...state.projects.entries()].slice(0, 100).map(([id, p]) => '- ' + id + ' | ' + p.company + ' | ' + p.cycle + ' | ' + curStepName(p));
+  const open = state.openId && state.projects.get(state.openId);
   return [
-    '[도우미] 당신은 «소공인 스마트제조 코디 보드»의 도우미입니다. 지금 할 수 있는 일은 명함(사진·텍스트)을 읽어 기관·담당자 등록 창을 채워 주는 것뿐입니다.',
-    '저장은 사람이 등록 창에서 직접 합니다. 당신이 저장·등록을 마쳤다고 말하지 마세요.',
+    '[도우미] 당신은 «소공인 스마트제조 코디 보드»의 도우미입니다. 할 수 있는 일은 두 가지입니다.',
+    '  (1) 명함(사진·텍스트)을 읽어 기관·담당자 등록 창을 채워 주기',
+    '  (2) 과제의 수행일지(1~4차)·사업계획서·결과보고서 초안 쓰기 — 보드 데이터와 사용자가 대화로 알려 준 내용만 근거로',
+    '저장은 사람이 합니다(등록 창·«단계 산출물로 등록» 버튼). 당신이 저장·등록·제출을 마쳤다고 말하지 마세요.',
+    '양식 작성 규칙:',
+    '- 사용자가 양식 작성을 요청하면 action "draft", projectId = [과제 목록]의 id, formId = [양식 목록]의 id. reply에는 «OO 과제의 2차 수행일지 초안을 씁니다»처럼 짧게.',
+    '- 과제는 업체명으로 찾고, 말하지 않았으면 [지금 열린 과제]를 씁니다. 그래도 모르거나 양식이 모호하면 action "none"으로 짧게 되묻습니다.',
+    '- 사용자가 방문 내용 등 사실을 알려 주면(«오늘 2차 방문에서 …») 기억해 두었다가 초안에 씁니다. 초안 작성 전이면 reply로 받았다고만 말합니다.',
     '명함 읽기 규칙:',
     '- 명함에 적힌 것만 옮깁니다. 추측·보완·지어내기 금지. 없으면 "".',
     '- name에는 사람 이름만, 직함·직위는 title에. mobile = 휴대폰, tel = 회사 전화(표기 그대로).',
@@ -3378,9 +3398,12 @@ function assistRules(){
     '- 사용자가 명함을 주면 card를 채우고, reply에 읽은 요지(기관·유형 추정·이름 직함·연락처)를 두세 줄로 말한 뒤 «등록 창을 열까요?»라고 묻습니다.',
     '- 사용자가 값을 고치라고 하면 [현재 명함]을 고친 card 전체를 다시 줍니다. 고칠 게 없으면 card는 null.',
     '- 사용자가 등록하라고(«네», «등록해 줘» 등) 하면 action "register", card는 null(또는 고친 전체). 명함이 아직 없으면 명함을 달라고 합니다.',
-    '- 명함과 무관한 요청(과제 조회·메일 보내기 등)은 아직 못 한다고 짧게 안내합니다.',
+    '- 명함 등록·양식 작성 외의 요청(과제 조회·메일 보내기 등)은 아직 못 한다고 짧게 안내합니다.',
     '- 아래 [보드의 기존 기관]에 같은 기관이 있으면 reply에 알려 주세요(기존 기관에 담당자만 추가할 수 있음).',
-    '답은 JSON 객체 하나: {"reply":"…","card":{"org":"","orgType":"","orgTypeWhy":"","name":"","title":"","mobile":"","tel":"","email":"","kakao":"","address":"","addressDetail":"","website":"","other":""} 또는 null,"action":"none"|"register"}',
+    '답은 JSON 객체 하나: {"reply":"…","card":{"org":"","orgType":"","orgTypeWhy":"","name":"","title":"","mobile":"","tel":"","email":"","kakao":"","address":"","addressDetail":"","website":"","other":""} 또는 null,"action":"none"|"register"|"draft","projectId":"","formId":""}',
+    '', '[양식 목록]', ...DRAFT_FORMS().map(f => '- ' + f.id + ' | ' + f.name + ' | ' + f.step + '단계'),
+    '', '[과제 목록] id | 업체 | 차수 | 현재 단계', ...(projs.length ? projs : ['(없음)']),
+    '', '[지금 열린 과제] ' + (open ? state.openId + ' | ' + open.company + ' | ' + open.cycle : '없음'),
     '', '[보드의 기존 기관]', ...(orgs.length ? orgs : ['(없음)']),
   ].join('\n');
 }
@@ -3440,6 +3463,13 @@ async function assistSend(){
         assistBubble('sys', res === true ? '등록 창을 열었습니다. 값을 확인하고 저장을 눌러 주세요.' : res + ' (위 명함 카드에서 고른 뒤 «등록 창 열기»)');
       }
     }
+    if (r?.action === 'draft'){
+      const pid = state.projects.has(r.projectId) ? r.projectId : state.openId && state.projects.has(state.openId) ? state.openId : '';
+      const form = DRAFT_FORMS().find(f => f.id === r.formId);
+      if (!pid) assistBubble('sys', '어느 과제인지 모르겠습니다. 업체명을 말해 주거나 과제 상세를 연 채로 다시 요청하세요.');
+      else if (!form) assistBubble('sys', '어떤 양식인지 모르겠습니다: 수행일지 1~4차, 사업계획서, 결과보고서 중에서 말해 주세요.');
+      else await assistDraft(pid, form, ctl);
+    }
   } catch (e){
     wait.remove();
     assistBubble('sys', cardErrorText(e));
@@ -3448,6 +3478,120 @@ async function assistSend(){
     assist.busy = null; assist.stop.hidden = true; assist.send.disabled = !!assist.denied;
     assist.input.focus();
   }
+}
+/* ---------- 도우미 양식 초안: buildDraft 뼈대(보드 값) → 빈 칸·초안 칸만 Claude가 씀 → 미리보기 → 단계 산출물로 등록 ---------- */
+const ASSIST_TAG = '[도우미 작성 초안 — 검토 후 다듬을 것]';
+const DRAFT_EVIDENCE_MAX = 20000;   // 근거 텍스트 상한(자) — 요청 64KiB 안
+/** 양식별 근거 단계: 수행일지 = 그 방문까지, 사업계획서 = 1~4단계, 결과보고서 = 전 단계 */
+const draftSteps = form => form.id === 'plan' ? [1, 2, 3, 4] : form.id === 'result' ? [1, 2, 3, 4, 5, 6, 7, 8] : STEPS.map(s => s.n).filter(n => n <= form.step);
+/** 초안 표(섹션·칸)를 화면 요소로 */
+function draftView(draft){
+  const box = el('div','dview');
+  draft.sections.forEach((sec, si) => {
+    const d = document.createElement('details');
+    d.open = si === 0;   // 첫 섹션은 펼쳐 둔다
+    d.append(Object.assign(document.createElement('summary'), { textContent:sec.heading + ' (' + sec.rows.length + '칸)' }));
+    const tb = document.createElement('table');
+    for (const [k, v] of sec.rows){ const tr = document.createElement('tr'); tr.append(td(k, 'co'), td(v || '—')); tb.append(tr); }
+    d.append(tb);
+    if (sec.note) d.append(el('div','rnote', sec.note));
+    box.append(d);
+  });
+  return box;
+}
+async function saveDraftDocx(p, name, draft, btn){
+  if (!downloads) return;
+  btn.disabled = true;
+  try { const D = await loadDocx(); await downloads.save({ filename:draftFilename(p, { name }), data:await D.Packer.toBlob(buildDocx(D, draft)) }); }
+  catch (e){ if (!(e && e.code === 'declined')) setNotice('Word 파일을 만들지 못했습니다 (' + ((e && (e.code || e.message)) || 'unknown') + ').'); }
+  finally { btn.disabled = false; }
+}
+/** 초안을 해당 단계 산출물(steps[n].outputs)에 버전으로 기록. 산출물 체크박스(docs)는 건드리지 않는다. 반환 = 버전 */
+function registerOutput(pid, form, draft){
+  const np = structuredClone(state.projects.get(pid)), key = String(form.step);
+  np.steps[key] = np.steps[key] || { status:'todo', planned:'', actual:'', tasks:{}, docs:{}, notes:[] };
+  const outs = np.steps[key].outputs = np.steps[key].outputs || [];
+  const v = outs.filter(o => o.formId === form.id).reduce((m, o) => Math.max(m, o.v || 0), 0) + 1;
+  outs.push(Object.assign({ id:newId('o'), formId:form.id, name:form.name + ' 초안 v' + v, v, ts:new Date().toISOString(), draft, fromChat:true }, me ? { by:me } : {}));
+  save(pid, np);
+  return v;
+}
+async function assistDraft(pid, form, ctl){
+  const p = state.projects.get(pid);
+  const draft = structuredClone(buildDraft(form, p, pid));
+  draft.intro = '보드 도우미가 보드 데이터와 대화 내용으로 쓴 초안입니다(' + today() + '). 빈칸은 보드에 없는 값, "미확인"은 근거가 없는 항목입니다. 제출 전 검토하세요.';
+  const cells = [];
+  draft.sections.forEach((sec, si) => sec.rows.forEach(([k, v], ri) => {
+    const t = String(v || '');
+    if (t.startsWith('미확인 — ') || t.includes(DRAFT_TAG))
+      cells.push({ key:'s' + si + 'r' + ri, si, ri, label:k, guide:t.startsWith('미확인 — ') ? t.slice(6) : '', cur:t.startsWith('미확인 — ') ? '' : t.replace(DRAFT_TAG, '').trim() });
+  }));
+  const ev = [...evidence(p, draftSteps(form), { tasksOf:'coord', acts:true }),
+    ...[1, 2, 3, 4].flatMap(r => DIAG[r].map(([k]) => { const v = diagVal(p, r, k); return v ? '· [' + r + '차 진단 · ' + k + '] ' + v : null; }).filter(Boolean)),
+    ...assetLines(pid, null, true)].join('\n').slice(0, DRAFT_EVIDENCE_MAX);
+  const told = assist.turns.filter(t => t.role === 'user').slice(-10).map(t => '- ' + t.content).join('\n');
+  const end = programEnd(p), ag = agreementOf(p), span = periodSpan(ag, end);
+  const prompt = [
+    '[작성] 당신은 소공인 스마트제조 코디네이터를 돕는 보조자입니다. «' + form.name + '» 초안의 빈 칸을 씁니다.',
+    '규칙:',
+    '- [근거]와 [사용자가 알려 준 내용]에 있는 사실만 씁니다. 없는 사실·수치·날짜·업체 정보·성과를 지어내지 않습니다.',
+    '- 수치·고유명사는 근거 그대로 옮깁니다.',
+    '- 근거가 없는 칸은 "미확인 — " 뒤에 [칸 목록]의 안내를 그대로 적습니다.',
+    '- 문체: 공문서 개조식(…함, …임). 한 칸에 3~6줄 이내.',
+    '- [칸 목록]의 모든 key에 대해 하나씩 씁니다.',
+    '- 초안을 채우려면 사용자에게 꼭 물어야 할 것이 있으면 questions에 짧게(최대 3개).',
+    '답은 JSON 하나: {"cells":{"s0r1":"…"},"questions":["…"]}',
+    '',
+    '[과제] ' + p.company + ' (' + p.cycle + ') · 공고 ' + (NOTICES[p.notice]?.label || '미확인') + ' · 사업기간 ' + (span ? ag + ' ~ ' + end : '미확인'),
+    '',
+    '[칸 목록] key | 칸 | 안내 | 현재 근거',
+    ...cells.map(c => c.key + ' | ' + c.label + ' | ' + (c.guide || '—') + ' | ' + (c.cur ? c.cur.replace(/\n/g, ' / ') : '—')),
+    '',
+    '[근거] (보드 메모·완료 업무·연락 이력·진단 입력·도입 장비)',
+    ev || '(없음)',
+    '',
+    '[사용자가 알려 준 내용] (이번 대화)',
+    told || '(없음)',
+  ].join('\n');
+  const wait = assistBubble('bot', '«' + form.name + '» 초안을 쓰는 중… (수십 초 걸릴 수 있습니다)');
+  let out;
+  try { out = await sampleFn.json(prompt, { signal:ctl.signal, modelTier:'default', cache:false }); }
+  finally { wait.remove(); }
+  let filled = 0, unknown = 0;
+  for (const c of cells){
+    const t = String(out?.cells?.[c.key] ?? '').trim();
+    if (!t) { unknown++; continue; }
+    if (t.startsWith('미확인')) { unknown++; draft.sections[c.si].rows[c.ri][1] = t; continue; }
+    draft.sections[c.si].rows[c.ri][1] = t + '\n' + ASSIST_TAG; filled++;
+  }
+  const qs = (Array.isArray(out?.questions) ? out.questions : []).map(String).filter(Boolean).slice(0, 3);
+  // 미리보기 + 버튼
+  const box = el('div','dprev');
+  box.append(el('div','rnote', p.company + ' ' + p.cycle + ' · ' + form.step + '단계 · 작성 ' + filled + '칸 · 미확인 ' + unknown + '칸'), draftView(draft));
+  const bar = el('div','lact');
+  const wb = el('button','btn','Word로 받기'); wb.disabled = !downloads;
+  wb.addEventListener('click', () => saveDraftDocx(p, form.name, draft, wb));
+  const rb = el('button','btn primary', form.step + '단계 산출물로 등록');
+  rb.addEventListener('click', () => {
+    const v = registerOutput(pid, form, draft);
+    rb.disabled = true; rb.textContent = '등록됨 (v' + v + ')';
+    assistBubble('sys', form.step + '단계 «산출물 초안»에 «' + form.name + ' 초안 v' + v + '»로 등록했습니다. 서명·제출을 마친 뒤 산출물 체크는 직접 해 주세요.');
+  });
+  bar.append(wb, rb);
+  if (told){
+    const nb = el('button','btn ghost','알려 준 내용을 단계 메모로 저장');
+    nb.title = '이번 대화에서 알려 준 내용을 ' + form.step + '단계 메모로 남깁니다(초안의 근거 기록)';
+    nb.addEventListener('click', () => {
+      const np = structuredClone(state.projects.get(pid)), key = String(form.step);
+      np.steps[key].notes = np.steps[key].notes || [];
+      np.steps[key].notes.push(Object.assign({ ts:new Date().toISOString(), text:'(도우미 대화) ' + assist.turns.filter(t => t.role === 'user').slice(-10).map(t => t.content).join(' / ') }, me ? { by:me } : {}));
+      save(pid, np); nb.disabled = true; nb.textContent = '메모로 저장됨';
+    });
+    bar.append(nb);
+  }
+  box.append(bar);
+  assistBubble('bot', '«' + form.name + '» 초안입니다. 칸을 펼쳐 확인하세요.', box);
+  if (qs.length) assistBubble('sys', '초안을 더 채우려면 알려 주세요:\n' + qs.map(q => '· ' + q).join('\n') + '\n알려 주신 뒤 «다시 써 줘»라고 하면 반영합니다.');
 }
 function assistBuild(){
   const p = el('aside','assist'); p.id = 'assist'; p.hidden = true;
@@ -3459,7 +3603,7 @@ function assistBuild(){
   hd.append(el('b', null, '보드 도우미'), el('span','grow'), nw, cx);
   const log = el('div','alog'); assist.log = log;
   const thumbs = el('div','athumbs'); thumbs.hidden = true; assist.thumbs = thumbs;
-  const ta = document.createElement('textarea'); ta.id = 'as-input'; ta.rows = 2; ta.placeholder = '명함 사진을 붙여 넣고(Ctrl+V) «등록해 줘»라고 적어 보세요'; assist.input = ta;
+  const ta = document.createElement('textarea'); ta.id = 'as-input'; ta.rows = 2; ta.placeholder = '명함 사진 붙여 넣기(Ctrl+V) 또는 «대한정밀 2차 수행일지 써 줘»'; assist.input = ta;
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); assistSend(); } });
   ta.addEventListener('paste', e => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length){ e.preventDefault(); assistAddFiles(fs); } });
   p.addEventListener('dragover', e => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
@@ -3480,7 +3624,7 @@ function assistBuild(){
   assistCaps();
 }
 function assistIntro(){
-  assistBubble('bot', '명함 사진을 붙여 넣거나(Ctrl+V) 끌어다 놓고, 또는 명함 내용을 붙여 넣고 «기관이랑 담당자 등록해 줘»라고 말해 주세요. 읽은 값으로 등록 창을 채워 드리고, 저장은 직접 확인해 누르시면 됩니다.\n· 사진은 저장하지 않습니다 · 대화할 때마다 이 계정의 Claude 사용량을 씁니다');
+  assistBubble('bot', '할 수 있는 일은 두 가지입니다.\n① 명함 등록 — 명함 사진을 붙여 넣거나(Ctrl+V) 명함 내용을 붙여 넣고 «기관이랑 담당자 등록해 줘»\n② 양식 초안 — «대한정밀 2차 수행일지 써 줘. 오늘 방문에서 … 논의함»처럼 말하면 수행일지(1~4차)·사업계획서·결과보고서 초안을 써서 보여 드립니다. «단계 산출물로 등록»을 누르면 그 단계에 버전으로 남습니다.\n저장·등록은 직접 누르시면 됩니다. 보드와 대화에 없는 내용은 «미확인»으로 둡니다.\n· 사진은 저장하지 않습니다 · 대화할 때마다 이 계정의 Claude 사용량을 씁니다');
 }
 /** 이 화면이 Claude·사진을 쓸 수 있는지 확인해 알린다(말없이 숨기지 않는다). sampleState: pending → ready | none */
 function assistCaps(){
@@ -3496,7 +3640,7 @@ function assistCaps(){
   assist.capsDone = true;
   sampleFn.limits?.().then(l => {
     if (l?.images){ assist.maxImg = l.images.maxCount; assist.types = l.images.mediaTypes || []; assist.fi.accept = assist.types.join(','); assist.att.hidden = false; return; }
-    assist.input.placeholder = '명함 내용을 텍스트로 붙여 넣고 «등록해 줘»라고 적어 보세요';
+    assist.input.placeholder = '명함 내용 붙여 넣기 또는 «대한정밀 2차 수행일지 써 줘»';
     assistBubble('sys', '이 화면에서는 Claude에게 사진을 보낼 수 없습니다(보는 앱이 지원하지 않음). 명함 내용을 텍스트로 붙여 넣어 주세요. 사진 속 글자는 휴대폰 사진 앱의 «텍스트 복사»로 옮길 수 있습니다.');
   }).catch(() => {});
 }
@@ -4762,6 +4906,37 @@ function renderAdmin(){
   adminEl.append(card);
 }
 
+/* 단계 «산출물 초안»: 도우미가 쓴 양식 초안 버전(steps[n].outputs). Word는 저장된 내용으로 그때 만든다(자료함은 docx 불가). */
+let outOpen = null;   // 펼친 초안 id
+function outputsEl(id, p, key, st){
+  const outs = st.outputs || [];
+  if (!outs.length) return null;
+  const box = el('div','outs');
+  box.append(el('div','subhead','산출물 초안 ' + outs.length + '건 — 도우미로 작성 (산출물 체크는 서명·제출 후 직접)'));
+  for (const o of outs.slice().reverse()){
+    const row = el('div','frow pout');
+    const top = el('div','lact');
+    top.append(el('b', null, o.name), el('span','fmsg', fmtTs(o.ts) + (o.by ? ' · ' + who(o.by) : '')));
+    const wb = el('button','btn','Word로 받기'); wb.disabled = !downloads;
+    wb.addEventListener('click', () => saveDraftDocx(p, o.name, o.draft, wb));
+    const open = outOpen === o.id;
+    const vb = el('button','btn ghost', open ? '닫기' : '보기');
+    vb.addEventListener('click', () => { outOpen = open ? null : o.id; render(); });
+    const del = el('button','btn ghost danger','삭제');
+    del.addEventListener('click', () => {
+      if (!del.dataset.armed){ del.dataset.armed = '1'; del.textContent = '삭제 확인'; return; }
+      const np = structuredClone(state.projects.get(id));
+      np.steps[key].outputs = (np.steps[key].outputs || []).filter(x => x.id !== o.id);
+      save(id, np);
+    });
+    top.append(wb, vb, del);
+    row.append(top);
+    if (open && o.draft) row.append(draftView(o.draft));
+    box.append(row);
+  }
+  return box;
+}
+
 let stepWarn = null;   // '과제id|단계' — 방금 완료로 바꾼 단계의 누락 알림
 function stepEl(id, p, s){
   const key = String(s.n);
@@ -4875,6 +5050,8 @@ function stepEl(id, p, s){
     dv.append(lab);
   });
   body.append(dv);
+  const ov = outputsEl(id, p, key, st);
+  if (ov) body.append(ov);
 
   // 현장진단표 항목 (1·2·3차 방문) — 입력값이 양식 초안의 해당 칸에 그대로 들어간다
   const round = DIAG_ROUND[s.n];

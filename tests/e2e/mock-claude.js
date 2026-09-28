@@ -151,8 +151,22 @@
     samples.push({ prompt, images, modelTier: opts.modelTier || 'default' });
     await new Promise(ok => setTimeout(ok, 50));
     // 보드 도우미(대화): 마지막 사용자 말의 첫 줄로 흉내 — 등록해/네 → register, 공급기업 → 유형 정정, 과제 → 못 함, 그 밖 → 명함 읽기
+    // 양식 초안 작성: [칸 목록]의 key마다 채움. 사용자가 알려 준 «용접 불량 원인»이 프롬프트에 있으면 반영(근거 전달 확인용)
+    if (prompt.startsWith('[작성]')){
+      const told = prompt.includes('용접 불량 원인') ? ' · 용접 불량 원인 논의 반영' : '';
+      const cells = {};
+      for (const m of prompt.matchAll(/^(s\d+r\d+) \| ([^|]+?) \|/gm)) cells[m[1]] = '(목) 작성 — ' + m[2].trim() + told;
+      return { cells, questions:['(목) 수행시간을 알려 주세요'] };
+    }
     if (prompt.includes('[도우미]')){
       const last = (Array.isArray(input) ? input[input.length - 1].content : prompt).split(/\r?\n/)[0];
+      if (/수행일지|사업계획서|결과보고서|다시 써/.test(last)){
+        const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));   // 과제 목록 절만(규칙 문장·양식 목록과 섞이지 않게)
+        const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => last.includes(co));
+        const n = (last.match(/([1-4])차/) || [])[1];
+        const formId = /사업계획서/.test(last) ? 'plan' : /결과보고서/.test(last) ? 'result' : n ? 'log' + n : '';
+        return { reply:'(목) 초안을 씁니다.', card:null, action:'draft', projectId: proj ? proj[1] : '', formId };
+      }
       const CARD = { org:'[테스트] 명함정밀', orgType:'sogongin', orgTypeWhy:'(목) 제조 업체명', name:'[테스트] 명함 대표', title:'', mobile:'010-0000-7777', tel:'02-000-7777',
         email:'card@example.com', kakao:'', address:'서울 금천구 가산디지털1로 1', addressDetail:'3층', website:'example.com', other:'' };
       if (/등록해|^네/.test(last)) return { reply:'(목) 등록 창을 엽니다.', card:null, action:'register' };

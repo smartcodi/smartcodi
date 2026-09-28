@@ -223,6 +223,26 @@ main{flex:1 1 auto;overflow:auto;padding:14px 16px 18px;-webkit-overflow-scrolli
 .pcomment{border:1px solid var(--line);background:var(--surface-2);border-radius:6px;padding:4px 7px;font-size:12px;width:100%;min-width:140px}
 .pmsg{margin-top:6px}
 .admcard td .btn{padding:2px 8px;font-size:11.5px}
+/* 보드 도우미 */
+#assistBtn.on{border-color:var(--accent);color:var(--accent)}
+.assist{position:fixed;top:0;right:0;bottom:0;width:min(400px,100%);z-index:42;background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.ahead{display:flex;align-items:center;gap:6px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.ahead b{font-size:15px}
+.alog{flex:1 1 auto;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.abub{max-width:92%;padding:8px 11px;border-radius:10px;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.abub.me{align-self:flex-end;background:color-mix(in oklab,var(--accent) 12%,var(--surface));border:1px solid color-mix(in oklab,var(--accent) 25%,var(--line))}
+.abub.bot{align-self:flex-start;background:var(--surface-2);border:1px solid var(--line-soft)}
+.abub.sys{align-self:stretch;max-width:none;font-size:12px;color:var(--ink-2);background:color-mix(in oklab,var(--warn) 8%,var(--surface));border:1px solid color-mix(in oklab,var(--warn) 22%,var(--line))}
+.abub .cardbox{white-space:normal;margin-top:8px}
+.abub .cardbox .kv i{width:60px}
+.afoot{border-top:1px solid var(--line);padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.afoot textarea{border:1px solid var(--line);background:var(--surface-2);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;min-height:44px;max-height:160px;font-family:inherit}
+.abar{display:flex;gap:6px;align-items:center}
+.abar .grow{flex:1 1 auto}
+.athumbs{display:flex;gap:5px;flex-wrap:wrap}
+.athumb{display:inline-flex;align-items:center;gap:2px;font-size:11.5px;border:1px dashed var(--line);border-radius:6px;padding:1px 2px 1px 7px;background:var(--surface-2)}
+.athumb .btn{padding:0 5px}
+@media (max-width:640px){ .assist{width:100%;border-left:0} .afoot textarea{font-size:16px} }
 @media (max-width:640px){ .pup input,.pup select,.pcomment{font-size:16px} }
 .rcard tr.sumrow td{font-weight:600;border-top:1px solid var(--line)}
 .budcard td .badge{white-space:nowrap;display:inline-block;margin:1px 0}
@@ -485,6 +505,7 @@ button.gcal{cursor:pointer;font-family:inherit}
     <select class="ctl" id="fnotice" aria-label="공고 필터"><option value="">공고 전체</option><option value="main">원공고</option><option value="extra">추가공고</option><option value="none">공고 미확인</option></select>
     <select class="ctl" id="fcoord" aria-label="담당 코디네이터 필터"><option value="">코디 전체</option></select>
     <label class="tog"><input type="checkbox" id="hideDone"> 완료 숨기기</label>
+    <button class="btn" id="assistBtn" type="button" title="명함 사진을 붙여 넣고 말로 기관·담당자를 등록합니다(Claude 사용)" hidden>💬 도우미</button>
     <button class="btn primary" id="newBtn">+ 새 과제</button>
   </div>
   <div class="legend" id="legend">
@@ -3228,6 +3249,58 @@ const cardErrorText = e => ({
 }[e && e.code] || '읽지 못했습니다 (' + ((e && (e.code || e.message)) || 'unknown') + ').');
 const normOrg = s => String(s || '').replace(/\(주\)|주식회사|㈜|\s/g, '').toLowerCase();
 const digitsOf = s => String(s || '').replace(/\D/g, '');
+/** Claude가 돌려준 명함 값 정리: 문자열로 맞추고, 이름 끝에 붙어 온 직함은 나눈다(담당자 저장 규칙: 직함은 따로) */
+function normCard(r){
+  const c = Object.fromEntries(CARD_KEYS.map(k => [k, String(r?.[k] ?? '').trim()]));
+  const nt = c.name.match(/^(.+?)\s+(\S+)$/);
+  if (nt && TITLE_LIST.includes(nt[2]) && !c.title){ c.name = nt[1]; c.title = nt[2]; }
+  return c;
+}
+/** 명함 값으로 기관(새로 또는 기존)·담당자 등록 창을 차례로 연다. 저장은 사람이. 문제가 있으면 안내 문구, 열었으면 true */
+function openCardForms(c, aid0, type){
+  if (!aid0 && !type) return '새 기관의 유형을 고르세요.';
+  const memo = [c.website && '웹사이트 ' + c.website, c.other].filter(Boolean).join(' / ');
+  const person = aid => ({ accountId:aid, type:state.accounts.get(aid)?.type, name:c.name, title:c.title, phone:c.mobile || c.tel, email:c.email, kakao:c.kakao,
+    memo:[c.mobile && c.tel ? '회사 전화 ' + c.tel : '', '명함에서 등록'].filter(Boolean).join(' / ') });
+  const doneC = () => setNotice('명함에서 담당자를 등록했습니다: ' + [c.name, c.title].filter(Boolean).join(' ') + (c.org ? ' · ' + c.org : ''));
+  if (aid0) openContactForm(null, person(aid0), doneC);
+  else openAccountForm(null, { type, name:c.org, phone:c.tel, address:c.address, addressDetail:c.addressDetail, memo }, aid => openContactForm(null, person(aid), doneC));
+  return true;
+}
+/** 명함 미리보기 + 기관 선택(같은 이름이면 기존 기관이 기본) + 유형 + 중복 경고 + «등록 창 열기». idp = 요소 id 접두사.
+    box.openForms()로 버튼과 같은 동작을 부를 수 있다(도우미의 «등록해 줘»). */
+function cardReview(c, idp, onOpened){
+  const box = el('div','cardbox');
+  box.append(kvBlock([['기관명', c.org], ['이름', c.name], ['직함', c.title], ['휴대폰', c.mobile], ['전화', c.tel], ['이메일', c.email], ['카톡', c.kakao],
+    ['주소', c.address], ['상세 주소', c.addressDetail], ['웹사이트', c.website], ['기타', c.other]]));
+  const same = [...state.accounts.entries()].filter(([, a]) => c.org && normOrg(a.name) === normOrg(c.org));
+  const pick = el('div','sf');
+  const pl = el('label', null, '기관'); pl.htmlFor = idp + '-acc';
+  const accSel = document.createElement('select'); accSel.id = idp + '-acc';
+  for (const [aid, a] of same) accSel.append(new Option('기존 기관에 담당자 추가 — ' + a.name + ' (' + (ROLES[a.type]?.label || a.type) + ')', aid));
+  accSel.append(new Option('새 기관으로 등록' + (c.org ? ' — ' + c.org : ''), ''));
+  const typeSel = document.createElement('select'); typeSel.id = idp + '-type'; typeSel.setAttribute('aria-label','기관 유형');
+  typeSel.append(new Option('기관 유형을 고르세요', ''));
+  for (const [k, v] of CARD_TYPES) typeSel.append(new Option(v + (k === c.orgType ? ' (추정)' : ''), k));
+  typeSel.value = CARD_TYPES.some(([k]) => k === c.orgType) ? c.orgType : '';
+  const why = el('div','rnote', c.orgTypeWhy ? '유형 추정 근거: ' + c.orgTypeWhy : '');
+  const sync = () => { typeSel.hidden = !!accSel.value; why.hidden = !!accSel.value || !c.orgTypeWhy; };
+  accSel.addEventListener('change', sync); sync();
+  pick.append(pl, accSel, typeSel, why); box.append(pick);
+  const dup = [...state.people.entries()].filter(([, p]) => (c.email && (p.email || '').toLowerCase() === c.email.toLowerCase())
+    || (digitsOf(c.mobile).length >= 9 && digitsOf(p.phone) === digitsOf(c.mobile)));
+  if (dup.length) box.append(el('div','caveat cdup', '이미 등록된 담당자일 수 있습니다: ' + dup.map(([, p]) => personLabel(p) + ' (' + (state.accounts.get(p.accountId)?.name || '기관 없음') + ')').join(', ')));
+  const err = el('div','err'); err.hidden = true;
+  const open = el('button','btn primary','등록 창 열기');
+  box.openForms = () => {
+    const r = openCardForms(c, accSel.value, typeSel.value);
+    if (r !== true){ err.textContent = r; err.hidden = false; return r; }
+    err.hidden = true; onOpened?.(); return true;
+  };
+  open.addEventListener('click', () => box.openForms());
+  const ob = el('div','sendbar'); ob.append(open); box.append(ob, err);
+  return box;
+}
 
 function openCardImport(){
   const scrim = el('div','scrim'), m = el('div','modal wide cardimp');
@@ -3262,54 +3335,11 @@ function openCardImport(){
     say('', 'Claude가 명함을 읽는 중… (몇 초~수십 초)');
     try {
       const r = await sampleFn.json(cardPrompt(text, files.length), Object.assign({ signal:ctl.signal, modelTier:'default' }, files.length ? { images:files } : {}));
-      const c = Object.fromEntries(CARD_KEYS.map(k => [k, String(r?.[k] ?? '').trim()]));
-      // 이름 끝에 직함이 붙어 오면 나눈다(담당자 저장 규칙: 직함은 따로)
-      const nt = c.name.match(/^(.+?)\s+(\S+)$/);
-      if (nt && TITLE_LIST.includes(nt[2]) && !c.title){ c.name = nt[1]; c.title = nt[2]; }
       say('ok', '읽었습니다. 값을 확인하고 «등록 창 열기»를 누르세요.');
-      showCard(c);
+      out.replaceChildren(cardReview(normCard(r), 'ci', () => { scrim.remove(); m.remove(); }));
     } catch (e){ say('bad', cardErrorText(e)); }
     finally { go.disabled = false; stop.hidden = true; ctl = null; }
   });
-
-  function showCard(c){
-    out.replaceChildren();
-    const rows = [['기관명', c.org], ['이름', c.name], ['직함', c.title], ['휴대폰', c.mobile], ['전화', c.tel], ['이메일', c.email], ['카톡', c.kakao],
-      ['주소', c.address], ['상세 주소', c.addressDetail], ['웹사이트', c.website], ['기타', c.other]];
-    out.append(kvBlock(rows));
-    // 기관: 같은 이름이 있으면 기존 기관에 담당자만 추가할지 고른다
-    const same = [...state.accounts.entries()].filter(([, a]) => c.org && normOrg(a.name) === normOrg(c.org));
-    const pick = el('div','sf');
-    const pl = el('label', null, '기관'); pl.htmlFor = 'ci-acc';
-    const accSel = document.createElement('select'); accSel.id = 'ci-acc';
-    for (const [aid, a] of same) accSel.append(new Option('기존 기관에 담당자 추가 — ' + a.name + ' (' + (ROLES[a.type]?.label || a.type) + ')', aid));
-    accSel.append(new Option('새 기관으로 등록' + (c.org ? ' — ' + c.org : ''), ''));
-    const typeSel = document.createElement('select'); typeSel.id = 'ci-type'; typeSel.setAttribute('aria-label','기관 유형');
-    typeSel.append(new Option('기관 유형을 고르세요', ''));
-    for (const [k, v] of CARD_TYPES) typeSel.append(new Option(v + (k === c.orgType ? ' (추정)' : ''), k));
-    typeSel.value = CARD_TYPES.some(([k]) => k === c.orgType) ? c.orgType : '';
-    const why = el('div','rnote', c.orgTypeWhy ? '유형 추정 근거: ' + c.orgTypeWhy : '');
-    const sync = () => { typeSel.hidden = !!accSel.value; why.hidden = !!accSel.value || !c.orgTypeWhy; };
-    accSel.addEventListener('change', sync); sync();
-    pick.append(pl, accSel, typeSel, why); out.append(pick);
-    // 같은 이메일·휴대폰 담당자가 이미 있으면 알린다(막지는 않음)
-    const dup = [...state.people.entries()].filter(([, p]) => (c.email && (p.email || '').toLowerCase() === c.email.toLowerCase())
-      || (digitsOf(c.mobile).length >= 9 && digitsOf(p.phone) === digitsOf(c.mobile)));
-    if (dup.length) out.append(el('div','caveat cdup', '이미 등록된 담당자일 수 있습니다: ' + dup.map(([, p]) => personLabel(p) + ' (' + (state.accounts.get(p.accountId)?.name || '기관 없음') + ')').join(', ')));
-    const open = el('button','btn primary','등록 창 열기');
-    open.addEventListener('click', () => {
-      const aid0 = accSel.value;
-      if (!aid0 && !typeSel.value) return say('bad', '새 기관의 유형을 고르세요.');
-      const memo = [c.website && '웹사이트 ' + c.website, c.other].filter(Boolean).join(' / ');
-      const person = aid => ({ accountId:aid, type:state.accounts.get(aid)?.type, name:c.name, title:c.title, phone:c.mobile || c.tel, email:c.email, kakao:c.kakao,
-        memo:[c.mobile && c.tel ? '회사 전화 ' + c.tel : '', '명함에서 등록'].filter(Boolean).join(' / ') });
-      const doneC = () => setNotice('명함에서 담당자를 등록했습니다: ' + [c.name, c.title].filter(Boolean).join(' ') + (c.org ? ' · ' + c.org : ''));
-      scrim.remove(); m.remove();
-      if (aid0) openContactForm(null, person(aid0), doneC);
-      else openAccountForm(null, { type:typeSel.value, name:c.org, phone:c.tel, address:c.address, addressDetail:c.addressDetail, memo }, aid => openContactForm(null, person(aid), doneC));
-    });
-    const ob = el('div','sendbar'); ob.append(open); out.append(ob);
-  }
   document.body.append(scrim, m);
   ta.focus();
 }
@@ -3319,6 +3349,140 @@ function cardBtn(){
   b.title = '명함 사진·텍스트로 기관·담당자 등록 창을 채웁니다(Claude 사용)';
   b.addEventListener('click', openCardImport);
   return b;
+}
+
+/* ---------- 보드 도우미(오른쪽 대화창) ----------
+   상단 «도우미» 버튼으로 여닫는다(휴대폰은 전체 화면). 명함 사진을 붙여 넣기(Ctrl+V)·끌어 놓기·첨부하고
+   «등록해 줘»처럼 말하면, 매 턴 sample.json 한 번으로 {reply, card, action}을 받는다.
+   · card = 명함 값(읽거나 대화로 고친 전체) → 말풍선에 cardReview(미리보기·기관 선택·유형·중복 경고)
+   · action "register" = 사용자가 등록하라고 함 → 마지막 명함의 «등록 창 열기»와 같은 동작. 저장은 사람이 창에서 한다.
+   대화·이미지는 이 화면 메모리에만 있고 저장하지 않는다. 이미지는 그 턴에만 보낸다(이전 이미지 내용은 명함 값으로 이어진다).
+   지금 할 수 있는 일은 명함 등록뿐 — 다른 요청은 못 한다고 답하게 한다. 누른 사람의 Claude 사용량을 쓴다. */
+const assist = { open:false, turns:[], card:null, lastReview:null, imgs:[], busy:null, maxImg:0, types:[], n:0 };
+const ASSIST_TURNS = 12;   // 보내는 이전 대화 턴 수(오래된 것부터 버림)
+function assistRules(){
+  const orgs = [...state.accounts.values()].slice(0, 150).map(a => '- ' + a.name + ' (' + (ROLES[a.type]?.label || a.type) + ')');
+  return [
+    '[도우미] 당신은 «소공인 스마트제조 코디 보드»의 도우미입니다. 지금 할 수 있는 일은 명함(사진·텍스트)을 읽어 기관·담당자 등록 창을 채워 주는 것뿐입니다.',
+    '저장은 사람이 등록 창에서 직접 합니다. 당신이 저장·등록을 마쳤다고 말하지 마세요.',
+    '명함 읽기 규칙:',
+    '- 명함에 적힌 것만 옮깁니다. 추측·보완·지어내기 금지. 없으면 "".',
+    '- name에는 사람 이름만, 직함·직위는 title에. mobile = 휴대폰, tel = 회사 전화(표기 그대로).',
+    '- address = 도로명 주소(시·구·도로명·건물번호), addressDetail = 동·층·호 등 나머지.',
+    '- orgType = "sogongin"(제조 소공인 업체) | "supplier"(스마트 장비·SW 공급기업) | "consultant"(컨설팅사) | "coord"(코디네이터 소속기관) | "unknown", orgTypeWhy에 근거 한 줄.',
+    '대화 규칙:',
+    '- 사용자가 명함을 주면 card를 채우고, reply에 읽은 요지(기관·유형 추정·이름 직함·연락처)를 두세 줄로 말한 뒤 «등록 창을 열까요?»라고 묻습니다.',
+    '- 사용자가 값을 고치라고 하면 [현재 명함]을 고친 card 전체를 다시 줍니다. 고칠 게 없으면 card는 null.',
+    '- 사용자가 등록하라고(«네», «등록해 줘» 등) 하면 action "register", card는 null(또는 고친 전체). 명함이 아직 없으면 명함을 달라고 합니다.',
+    '- 명함과 무관한 요청(과제 조회·메일 보내기 등)은 아직 못 한다고 짧게 안내합니다.',
+    '- 아래 [보드의 기존 기관]에 같은 기관이 있으면 reply에 알려 주세요(기존 기관에 담당자만 추가할 수 있음).',
+    '답은 JSON 객체 하나: {"reply":"…","card":{"org":"","orgType":"","orgTypeWhy":"","name":"","title":"","mobile":"","tel":"","email":"","kakao":"","address":"","addressDetail":"","website":"","other":""} 또는 null,"action":"none"|"register"}',
+    '', '[보드의 기존 기관]', ...(orgs.length ? orgs : ['(없음)']),
+  ].join('\n');
+}
+function assistBubble(role, text, extra){
+  const b = el('div','abub ' + role);
+  if (text) b.append(el('div','atext', text));
+  if (extra) b.append(extra);
+  assist.log.append(b);
+  assist.log.scrollTop = assist.log.scrollHeight;
+  return b;
+}
+function assistThumbs(){
+  assist.thumbs.replaceChildren();
+  assist.imgs.forEach((f, i) => {
+    const t = el('span','athumb', f.name || '붙여 넣은 이미지');
+    const x = el('button','btn ghost','✕'); x.setAttribute('aria-label','이미지 빼기');
+    x.addEventListener('click', () => { assist.imgs.splice(i, 1); assistThumbs(); });
+    t.append(x); assist.thumbs.append(t);
+  });
+  assist.thumbs.hidden = !assist.imgs.length;
+}
+function assistAddFiles(files){
+  const ok = [...files].filter(f => f && (assist.types.length ? assist.types.includes(f.type) : /^image\//.test(f.type)));
+  if (!assist.maxImg){ if (ok.length) assistBubble('sys', '이 화면에서는 이미지를 보낼 수 없습니다. 명함 내용을 텍스트로 붙여 넣어 주세요.'); return; }
+  for (const f of ok) if (assist.imgs.length < assist.maxImg) assist.imgs.push(f);
+  assistThumbs();
+}
+async function assistSend(){
+  const text = assist.input.value.trim();
+  if (assist.busy || (!text && !assist.imgs.length)) return;
+  const imgs = assist.imgs.splice(0); assistThumbs();
+  assist.input.value = '';
+  const said = text || '(명함 사진)';
+  assistBubble('me', said + (imgs.length ? '  📎' + imgs.length : ''));
+  const wait = assistBubble('bot', '읽는 중…');
+  const ctl = new AbortController(); assist.busy = ctl; assist.stop.hidden = false; assist.send.disabled = true;
+  const cur = '[현재 명함] ' + (assist.card ? JSON.stringify(assist.card) : '없음');
+  const hist = assist.turns.slice(-ASSIST_TURNS);
+  const turns = [{ role:'user', content:assistRules() }, ...hist,
+    { role:'user', content:said + (imgs.length ? '\n(명함 이미지 ' + imgs.length + '장 첨부)' : '') + '\n\n' + cur }];
+  try {
+    const r = await sampleFn.json(turns, Object.assign({ signal:ctl.signal, modelTier:'default', cache:false }, imgs.length ? { images:imgs } : {}));
+    const reply = String(r?.reply || '').trim() || '(답이 비었습니다)';
+    wait.remove();
+    assist.turns.push({ role:'user', content:said + (imgs.length ? ' (명함 이미지 ' + imgs.length + '장)' : '') }, { role:'assistant', content:reply });
+    let rev = null;
+    if (r?.card && typeof r.card === 'object'){
+      assist.card = normCard(r.card);
+      rev = cardReview(assist.card, 'as-' + (++assist.n));
+      assist.lastReview = rev;
+    }
+    assistBubble('bot', reply, rev);
+    if (r?.action === 'register'){
+      if (!assist.lastReview) assistBubble('sys', '아직 읽은 명함이 없습니다. 명함 사진이나 텍스트를 먼저 주세요.');
+      else {
+        const res = assist.lastReview.openForms();
+        assistBubble('sys', res === true ? '등록 창을 열었습니다. 값을 확인하고 저장을 눌러 주세요.' : res + ' (위 명함 카드에서 고른 뒤 «등록 창 열기»)');
+      }
+    }
+  } catch (e){
+    wait.remove();
+    assistBubble('sys', cardErrorText(e));
+    if (['not_granted','sampling_disabled','not_declared','capability_disabled','capability_removed'].includes(e && e.code)) assist.denied = true;
+  } finally {
+    assist.busy = null; assist.stop.hidden = true; assist.send.disabled = !!assist.denied;
+    assist.input.focus();
+  }
+}
+function assistBuild(){
+  const p = el('aside','assist'); p.id = 'assist'; p.hidden = true;
+  p.setAttribute('role','complementary'); p.setAttribute('aria-label','보드 도우미');
+  const hd = el('div','ahead');
+  const nw = el('button','btn ghost','새 대화'), cx = el('button','btn ghost','닫기');
+  nw.addEventListener('click', () => { assist.busy?.abort(); assist.turns = []; assist.card = null; assist.lastReview = null; assist.imgs = []; assistThumbs(); assist.log.replaceChildren(); assistIntro(); });
+  cx.addEventListener('click', () => assistToggle(false));
+  hd.append(el('b', null, '보드 도우미'), el('span','grow'), nw, cx);
+  const log = el('div','alog'); assist.log = log;
+  const thumbs = el('div','athumbs'); thumbs.hidden = true; assist.thumbs = thumbs;
+  const ta = document.createElement('textarea'); ta.id = 'as-input'; ta.rows = 2; ta.placeholder = '명함 사진을 붙여 넣고(Ctrl+V) «등록해 줘»라고 적어 보세요'; assist.input = ta;
+  ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); assistSend(); } });
+  ta.addEventListener('paste', e => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length){ e.preventDefault(); assistAddFiles(fs); } });
+  p.addEventListener('dragover', e => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
+  p.addEventListener('drop', e => { if (e.dataTransfer?.files?.length){ e.preventDefault(); assistAddFiles(e.dataTransfer.files); } });
+  const fi = document.createElement('input'); fi.type = 'file'; fi.id = 'as-img'; fi.accept = 'image/*'; fi.multiple = true; fi.hidden = true;
+  fi.addEventListener('change', () => { assistAddFiles(fi.files || []); fi.value = ''; });
+  const att = el('label','btn ghost','📎 사진'); att.htmlFor = fi.id; att.hidden = true; assist.att = att;
+  const send = el('button','btn primary','보내기'), stop = el('button','btn ghost','멈추기'); stop.hidden = true;
+  send.addEventListener('click', assistSend); stop.addEventListener('click', () => assist.busy?.abort());
+  assist.send = send; assist.stop = stop;
+  const bar = el('div','abar'); bar.append(att, fi, el('span','grow'), stop, send);
+  const ft = el('div','afoot'); ft.append(thumbs, ta, bar);
+  p.append(hd, log, ft);
+  document.body.append(p);
+  assist.panel = p;
+  sampleFn.limits?.().then(l => { if (l?.images){ assist.maxImg = l.images.maxCount; assist.types = l.images.mediaTypes || []; fi.accept = assist.types.join(','); att.hidden = false; } }).catch(() => {});
+  assistIntro();
+}
+function assistIntro(){
+  assistBubble('bot', '명함 사진을 붙여 넣거나(Ctrl+V) 끌어다 놓고, 또는 명함 내용을 붙여 넣고 «기관이랑 담당자 등록해 줘»라고 말해 주세요. 읽은 값으로 등록 창을 채워 드리고, 저장은 직접 확인해 누르시면 됩니다.\n· 사진은 저장하지 않습니다 · 대화할 때마다 이 계정의 Claude 사용량을 씁니다');
+}
+function assistToggle(open = !assist.open){
+  if (!sampleFn) return;
+  if (!assist.panel) assistBuild();
+  assist.open = open; assist.panel.hidden = !open;
+  document.getElementById('assistBtn').classList.toggle('on', open);
+  if (open) assist.input.focus();
 }
 
 /* ---------- 목록 탭 공통: 유형 칩 + 검색 ---------- */
@@ -5414,6 +5578,7 @@ function openSend(id, p, s){
 
 /* ======================= 새 과제 ======================= */
 document.getElementById('newBtn').addEventListener('click', openNew);
+document.getElementById('assistBtn').addEventListener('click', () => assistToggle());
 
 function openNew(){
   const scrim = el('div','scrim');
@@ -5540,7 +5705,7 @@ render();
       if (!isOwner && state.tab === 'admin') state.tab = 'board';
       render();
     });
-    c.use('sample').then(x => { sampleFn = x; if (x && (state.tab === 'acc' || state.tab === 'con')) paint(); });   // «명함으로 등록» 버튼   // 사업계획서 점검(Claude). null이면 문서 항목은 사람이 판정
+    c.use('sample').then(x => { sampleFn = x; document.getElementById('assistBtn').hidden = !x; if (x && (state.tab === 'acc' || state.tab === 'con')) paint(); });   // «명함으로 등록» 버튼   // 사업계획서 점검(Claude). null이면 문서 항목은 사람이 판정
   }
 
   db = c && c.use ? await c.use('db') : null;

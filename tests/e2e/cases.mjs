@@ -542,6 +542,48 @@ export async function case2(run){
     await H.closeModals(page);
     await cleanupCase(page, { company:'(없음)', contacts:[CARD_NAME], accounts:[CARD_ORG] });
   });
+  await run.step('C2-27', async () => {
+    // 보드 도우미(오른쪽 대화창): 명함 사진 붙여 넣기 → 읽기 → 대화로 유형 정정 → «등록해 줘» → 미리 채운 창 저장 → 정리
+    await tab(page, 'board');
+    await page.locator('#assistBtn').click();
+    await until(() => page.locator('#assist').isVisible(), '도우미 패널이 안 열림');
+    const png = (await import('node:fs')).readFileSync(path.join(HERE, 'results', 'card.png')).toString('base64');
+    await page.evaluate(b64 => {
+      const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const dt = new DataTransfer(); dt.items.add(new File([bin], 'card.png', { type:'image/png' }));
+      document.getElementById('as-input').dispatchEvent(new ClipboardEvent('paste', { clipboardData:dt, bubbles:true, cancelable:true }));
+    }, png);
+    await until(async () => (await page.locator('#assist .athumb').count()) === 1, '붙여 넣은 이미지가 안 붙음');
+    const say = async (t, n) => {
+      const before = await page.evaluate(() => window.__mock.samples.length);
+      await page.locator('#as-input').fill(t); await page.locator('#as-input').press('Enter');
+      await until(async () => (await page.evaluate(() => window.__mock.samples.length)) > before && !(await page.locator('#assist .abub.bot', { hasText:'읽는 중…' }).count()), '답이 안 옴: ' + t);
+      return page.evaluate(i => window.__mock.samples[i], before);
+    };
+    const c1 = await say('이 명함 읽어 줘');
+    if (c1.images !== 1 || !c1.prompt.includes('[도우미]') || !c1.prompt.includes('[테스트] CASE2 파이프가공')) fail('1턴 전달: 이미지 ' + c1.images);
+    await until(() => page.locator('#as-1-type').count(), '명함 카드가 대화에 안 뜸');
+    if ((await page.locator('#as-1-type').inputValue()) !== 'sogongin' || (await page.locator('#as-1-acc').inputValue()) !== '') fail('1턴 카드 기본값');
+    if (await page.locator('#assist .athumb').count()) fail('보낸 뒤 이미지가 남음');
+    await say('유형은 공급기업이야');
+    await until(async () => (await page.locator('#as-2-type').inputValue().catch(() => '')) === 'supplier', '대화로 유형 정정 안 됨');
+    const c3 = await say('등록해 줘');
+    if (!c3.prompt.includes('유형은 공급기업이야') || !c3.prompt.includes('"orgType":"supplier"')) fail('3턴에 대화·현재 명함이 안 들어감');
+    const val = k => modal(page).locator('#ff-' + k).inputValue();
+    await until(async () => (await val('name').catch(() => '')) === CARD_ORG, '«등록해 줘»로 기관 창이 안 열림');
+    if ((await val('type')) !== 'supplier' || (await val('phone')) !== '02-000-7777') fail('기관 창 값: ' + await val('type'));
+    await hasText(page.locator('#assist .abub.sys').last(), '등록 창을 열었습니다');
+    await H.saveModal(page);
+    await until(async () => (await val('name').catch(() => '')) === CARD_NAME, '담당자 창이 이어서 안 열림');
+    await H.saveModal(page);
+    const aid = await findId(page, 'accounts', d => d.name === CARD_ORG && d.type === 'supplier');
+    await until(async () => !!(await findId(page, 'contacts', d => d.name === CARD_NAME && d.accountId === aid)), '대화로 등록한 담당자 저장·연결 안 됨');
+    await say('한빛정밀 과제 어디까지 진행됐어?');
+    await hasText(page.locator('#assist .abub.bot').last(), '과제 조회는 아직 못 합니다');
+    await page.locator('#assist').getByRole('button', { name:'닫기' }).click();
+    await until(async () => !(await page.locator('#assist').isVisible()), '도우미가 안 닫힘');
+    await cleanupCase(page, { company:'(없음)', contacts:[CARD_NAME], accounts:[CARD_ORG] });
+  });
   let m;
   await run.step('C2-06', async () => {
     m = await openSend(page, CO, 3);

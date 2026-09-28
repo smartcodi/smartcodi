@@ -2959,11 +2959,11 @@ function openAccountForm(aid, preset, done){
     fields: [
       { k:'type', label:'유형', type:'select', options:TYPE_OPTS, value:a?.type || preset?.type || 'sogongin' },
       { k:'name', label:'기관명', value:a?.name || preset?.name || '' },
-      { k:'phone', label:'대표전화', value:a?.phone || '' },
-      { k:'address', label:'주소 (도로명) — 방문·길찾기에 쓰입니다', value:a?.address || '', ph:'예: 서울 금천구 가산디지털1로 000', full:true },
-      { k:'addressDetail', label:'상세 주소', value:a?.addressDetail || '', ph:'동·층·호' },
-      { k:'visitNote', label:'방문 안내', value:a?.visitNote || '', ph:'주차·출입 방법 등' },
-      { k:'memo', label:'메모', type:'textarea', value:a?.memo || '', full:true },
+      { k:'phone', label:'대표전화', value:a?.phone || preset?.phone || '' },
+      { k:'address', label:'주소 (도로명) — 방문·길찾기에 쓰입니다', value:a?.address || preset?.address || '', ph:'예: 서울 금천구 가산디지털1로 000', full:true },
+      { k:'addressDetail', label:'상세 주소', value:a?.addressDetail || preset?.addressDetail || '', ph:'동·층·호' },
+      { k:'visitNote', label:'방문 안내', value:a?.visitNote || preset?.visitNote || '', ph:'주차·출입 방법 등' },
+      { k:'memo', label:'메모', type:'textarea', value:a?.memo || preset?.memo || '', full:true },
     ],
     onSave: v => {
       if (!v.name) return '기관명을 입력하세요.';
@@ -3200,6 +3200,127 @@ function renderContactRec(cid){
   activitySection(body, allActivities().filter(x => sentTo(x.a, new Set([cid]))), '이 담당자에게 보낸 연락이 없습니다.');
 }
 
+/* ---------- «명함으로 등록» ----------
+   명함 사진·텍스트 → Claude(sample.json 한 번)가 칸을 뽑는다 → 기관·담당자 등록 창을 미리 채워 연다.
+   명함에 적힌 값만 옮기고(추측 금지), 저장은 사람이 창에서 확인해 누른다. 사진은 저장하지 않는다(Claude에게만 보냄).
+   누른 사람의 Claude 사용량을 쓰고 첫 호출에 동의 창이 뜬다. 기관 유형은 추정값을 기본으로 사람이 고른다. */
+const CARD_TYPES = [['sogongin','소공인'], ['supplier','공급기업'], ['consultant','컨설팅사'], ['coord','코디 소속기관']];
+const CARD_KEYS = ['org','orgType','orgTypeWhy','name','title','mobile','tel','email','kakao','address','addressDetail','website','other'];
+function cardPrompt(text, nImg){
+  return [
+    '[명함] 아래 명함' + (nImg ? '(첨부 이미지 ' + nImg + '장' + (text ? ' + 텍스트' : '') + ')' : ' 텍스트') + '에서 기관·연락처 정보를 뽑아 JSON 객체 하나로 답하세요.',
+    '규칙:',
+    '- 명함에 적힌 것만 옮깁니다. 추측·보완·지어내기 금지. 없으면 "".',
+    '- name에는 사람 이름만, 직함·직위(대표, 이사, 과장, 팀장, 영업 담당 등)는 title에 둡니다.',
+    '- mobile = 휴대폰, tel = 회사 대표·사무실 전화. 번호는 명함 표기 그대로(하이픈 유지).',
+    '- address = 도로명 주소(시·구·도로명·건물번호까지), addressDetail = 동·층·호 등 나머지.',
+    '- orgType = 스마트제조 지원사업에서 이 기관의 역할 추정: "sogongin"(제조 소공인 업체) | "supplier"(스마트 장비·SW 공급기업) | "consultant"(컨설팅사) | "coord"(코디네이터 소속기관) | "unknown". orgTypeWhy에 근거 한 줄.',
+    '- other = 위 칸에 들어가지 않은 명함 문구(팩스, 업종 등) 짧게.',
+    '형식: {"org":"","orgType":"","orgTypeWhy":"","name":"","title":"","mobile":"","tel":"","email":"","kakao":"","address":"","addressDetail":"","website":"","other":""}',
+    ...(text ? ['', '[명함 텍스트]', text.slice(0, 4000)] : []),
+  ].join('\n');
+}
+const cardErrorText = e => ({
+  cancelled:'읽기를 멈췄습니다.', rate_limited:'Claude 사용 한도에 걸렸습니다. 잠시 뒤 다시 누르세요.', session_expired:'claude.ai에 다시 로그인하세요.',
+  image_rejected:'이 사진을 보낼 수 없습니다(형식·크기). JPEG·PNG로 다시 찍어 주세요.', invalid_json:'Claude 답을 읽지 못했습니다. «명함 읽기»를 한 번 더 누르세요.',
+  empty_completion:'Claude 답이 비었습니다. 사진을 더 선명하게 찍어 주세요.', refused:'Claude가 이 요청을 거절했습니다.',
+  not_granted:'이 화면에서 Claude 사용이 허용되지 않았습니다. 등록 창에 직접 입력하세요.', prompt_too_large:'텍스트가 너무 깁니다. 명함 내용만 넣으세요.',
+}[e && e.code] || '읽지 못했습니다 (' + ((e && (e.code || e.message)) || 'unknown') + ').');
+const normOrg = s => String(s || '').replace(/\(주\)|주식회사|㈜|\s/g, '').toLowerCase();
+const digitsOf = s => String(s || '').replace(/\D/g, '');
+
+function openCardImport(){
+  const scrim = el('div','scrim'), m = el('div','modal wide cardimp');
+  m.setAttribute('role','dialog'); m.setAttribute('aria-label','명함으로 등록');
+  const close = () => { ctl?.abort(); scrim.remove(); m.remove(); };
+  scrim.addEventListener('click', close);
+  m.append(el('h2', null, '명함으로 등록'),
+    el('p','hint','명함 사진이나 텍스트를 넣으면 Claude가 기관·담당자 칸을 뽑아 등록 창을 채워 줍니다. 명함에 적힌 값만 옮기고, 저장은 창에서 확인해 직접 누릅니다. 사진은 저장하지 않습니다. 누른 사람의 Claude 사용량을 씁니다.'));
+  const sf = el('div','sf');
+  const tl = el('label', null, '명함 텍스트 (선택)'); tl.htmlFor = 'ci-text';
+  const ta = document.createElement('textarea'); ta.id = 'ci-text'; ta.placeholder = '명함 내용을 붙여 넣으세요'; ta.style.minHeight = '90px';
+  sf.append(tl, ta); m.append(sf);
+  const sf2 = el('div','sf'); sf2.hidden = true;
+  const il = el('label', null, '명함 사진 (앞·뒷면 여러 장 가능)'); il.htmlFor = 'ci-img';
+  const img = document.createElement('input'); img.type = 'file'; img.id = 'ci-img'; img.accept = 'image/*'; img.multiple = true;
+  sf2.append(il, img); m.append(sf2);
+  let maxImg = 0;
+  sampleFn?.limits?.().then(l => { if (l?.images){ maxImg = l.images.maxCount; img.accept = l.images.mediaTypes.join(','); sf2.hidden = false; } }).catch(() => {});
+  const bar = el('div','sendbar');
+  const go = el('button','btn primary','명함 읽기'), stop = el('button','btn ghost','멈추기'), cl = el('button','btn ghost','닫기');
+  stop.hidden = true; cl.addEventListener('click', close);
+  bar.append(go, stop, el('span','grow'), cl); m.append(bar);
+  const stat = el('div','sendstat'); stat.hidden = true; m.append(stat);
+  const say = (cls, t) => { stat.className = 'sendstat' + (cls ? ' ' + cls : ''); stat.textContent = t; stat.hidden = !t; };
+  const out = el('div','cardres'); m.append(out);
+  let ctl = null;
+  stop.addEventListener('click', () => ctl?.abort());
+  go.addEventListener('click', async () => {
+    const text = ta.value.trim(), files = [...(img.files || [])].slice(0, maxImg || 0);
+    if (!text && !files.length) return say('bad', '명함 텍스트를 넣거나 사진을 고르세요.');
+    ctl = new AbortController(); go.disabled = true; stop.hidden = false; out.replaceChildren();
+    say('', 'Claude가 명함을 읽는 중… (몇 초~수십 초)');
+    try {
+      const r = await sampleFn.json(cardPrompt(text, files.length), Object.assign({ signal:ctl.signal, modelTier:'default' }, files.length ? { images:files } : {}));
+      const c = Object.fromEntries(CARD_KEYS.map(k => [k, String(r?.[k] ?? '').trim()]));
+      // 이름 끝에 직함이 붙어 오면 나눈다(담당자 저장 규칙: 직함은 따로)
+      const nt = c.name.match(/^(.+?)\s+(\S+)$/);
+      if (nt && TITLE_LIST.includes(nt[2]) && !c.title){ c.name = nt[1]; c.title = nt[2]; }
+      say('ok', '읽었습니다. 값을 확인하고 «등록 창 열기»를 누르세요.');
+      showCard(c);
+    } catch (e){ say('bad', cardErrorText(e)); }
+    finally { go.disabled = false; stop.hidden = true; ctl = null; }
+  });
+
+  function showCard(c){
+    out.replaceChildren();
+    const rows = [['기관명', c.org], ['이름', c.name], ['직함', c.title], ['휴대폰', c.mobile], ['전화', c.tel], ['이메일', c.email], ['카톡', c.kakao],
+      ['주소', c.address], ['상세 주소', c.addressDetail], ['웹사이트', c.website], ['기타', c.other]];
+    out.append(kvBlock(rows));
+    // 기관: 같은 이름이 있으면 기존 기관에 담당자만 추가할지 고른다
+    const same = [...state.accounts.entries()].filter(([, a]) => c.org && normOrg(a.name) === normOrg(c.org));
+    const pick = el('div','sf');
+    const pl = el('label', null, '기관'); pl.htmlFor = 'ci-acc';
+    const accSel = document.createElement('select'); accSel.id = 'ci-acc';
+    for (const [aid, a] of same) accSel.append(new Option('기존 기관에 담당자 추가 — ' + a.name + ' (' + (ROLES[a.type]?.label || a.type) + ')', aid));
+    accSel.append(new Option('새 기관으로 등록' + (c.org ? ' — ' + c.org : ''), ''));
+    const typeSel = document.createElement('select'); typeSel.id = 'ci-type'; typeSel.setAttribute('aria-label','기관 유형');
+    typeSel.append(new Option('기관 유형을 고르세요', ''));
+    for (const [k, v] of CARD_TYPES) typeSel.append(new Option(v + (k === c.orgType ? ' (추정)' : ''), k));
+    typeSel.value = CARD_TYPES.some(([k]) => k === c.orgType) ? c.orgType : '';
+    const why = el('div','rnote', c.orgTypeWhy ? '유형 추정 근거: ' + c.orgTypeWhy : '');
+    const sync = () => { typeSel.hidden = !!accSel.value; why.hidden = !!accSel.value || !c.orgTypeWhy; };
+    accSel.addEventListener('change', sync); sync();
+    pick.append(pl, accSel, typeSel, why); out.append(pick);
+    // 같은 이메일·휴대폰 담당자가 이미 있으면 알린다(막지는 않음)
+    const dup = [...state.people.entries()].filter(([, p]) => (c.email && (p.email || '').toLowerCase() === c.email.toLowerCase())
+      || (digitsOf(c.mobile).length >= 9 && digitsOf(p.phone) === digitsOf(c.mobile)));
+    if (dup.length) out.append(el('div','caveat cdup', '이미 등록된 담당자일 수 있습니다: ' + dup.map(([, p]) => personLabel(p) + ' (' + (state.accounts.get(p.accountId)?.name || '기관 없음') + ')').join(', ')));
+    const open = el('button','btn primary','등록 창 열기');
+    open.addEventListener('click', () => {
+      const aid0 = accSel.value;
+      if (!aid0 && !typeSel.value) return say('bad', '새 기관의 유형을 고르세요.');
+      const memo = [c.website && '웹사이트 ' + c.website, c.other].filter(Boolean).join(' / ');
+      const person = aid => ({ accountId:aid, type:state.accounts.get(aid)?.type, name:c.name, title:c.title, phone:c.mobile || c.tel, email:c.email, kakao:c.kakao,
+        memo:[c.mobile && c.tel ? '회사 전화 ' + c.tel : '', '명함에서 등록'].filter(Boolean).join(' / ') });
+      const doneC = () => setNotice('명함에서 담당자를 등록했습니다: ' + [c.name, c.title].filter(Boolean).join(' ') + (c.org ? ' · ' + c.org : ''));
+      scrim.remove(); m.remove();
+      if (aid0) openContactForm(null, person(aid0), doneC);
+      else openAccountForm(null, { type:typeSel.value, name:c.org, phone:c.tel, address:c.address, addressDetail:c.addressDetail, memo }, aid => openContactForm(null, person(aid), doneC));
+    });
+    const ob = el('div','sendbar'); ob.append(open); out.append(ob);
+  }
+  document.body.append(scrim, m);
+  ta.focus();
+}
+function cardBtn(){
+  if (!sampleFn) return null;
+  const b = el('button','btn','명함으로 등록');
+  b.title = '명함 사진·텍스트로 기관·담당자 등록 창을 채웁니다(Claude 사용)';
+  b.addEventListener('click', openCardImport);
+  return b;
+}
+
 /* ---------- 목록 탭 공통: 유형 칩 + 검색 ---------- */
 function listHead(host, title, count, actions, noteText){
   const head = el('section','rcard');
@@ -3289,7 +3410,7 @@ function renderAccounts(){
   const csv = csvBtn('기관목록_' + today() + '.csv',
     [['유형', ([,a]) => ROLES[a.type]?.label || ''], ['기관명', ([,a]) => a.name], ['대표전화', ([,a]) => a.phone || ''], ['주소', ([,a]) => a.address || ''], ['상세 주소', ([,a]) => a.addressDetail || ''], ['방문 안내', ([,a]) => a.visitNote || ''],
      ['담당자 수', ([id]) => peopleOf(id).length], ['관련 과제 수', ([id]) => projectsLinkedTo(c => c.accountId === id).length]], all);
-  const head = listHead(accEl, '기관 목록', all.length + '곳', [csv, addA],
+  const head = listHead(accEl, '기관 목록', all.length + '곳', [csv, cardBtn(), addA].filter(Boolean),
     '소공인 업체, 코디네이터 소속기관, 공급기업, 컨설팅사(Account). 소공인 기관명은 과제 업체명으로 쓰입니다. 행을 누르면 기관 상세(담당자·관련 과제·연락 이력)가 열립니다.');
   typeTools(head, renderAccounts, paint);
 
@@ -3336,7 +3457,7 @@ function renderContacts(){
      ['전화', x => x.c.phone || ''], ['이메일', x => x.c.email || ''], ['카톡', x => x.c.kakao || ''],
      ['지정 과제', x => projectsLinkedTo(y => y.contactId === x.id).map(([,p]) => p.company + ' ' + p.cycle).join(', ')]],
     peopleOfType(''));
-  const head = listHead(conEl, '담당자 목록', state.people.size + '명', [csv, addC],
+  const head = listHead(conEl, '담당자 목록', state.people.size + '명', [csv, cardBtn(), addC].filter(Boolean),
     '기관에 속한 사람(Contact). 과제의 역할별 담당자는 여기서 고릅니다. 연락처를 고치면 그 사람이 지정된 과제에 자동 반영됩니다. 행을 누르면 담당자 상세(참여 과제·연락 이력)가 열립니다.');
   typeTools(head, renderContacts, paint);
 
@@ -5419,7 +5540,7 @@ render();
       if (!isOwner && state.tab === 'admin') state.tab = 'board';
       render();
     });
-    c.use('sample').then(x => { sampleFn = x; });   // 사업계획서 점검(Claude). null이면 문서 항목은 사람이 판정
+    c.use('sample').then(x => { sampleFn = x; if (x && (state.tab === 'acc' || state.tab === 'con')) paint(); });   // «명함으로 등록» 버튼   // 사업계획서 점검(Claude). null이면 문서 항목은 사람이 판정
   }
 
   db = c && c.use ? await c.use('db') : null;

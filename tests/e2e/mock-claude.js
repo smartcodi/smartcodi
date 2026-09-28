@@ -150,6 +150,9 @@
     const images = opts.images ? [].concat(opts.images).length : 0;
     samples.push({ prompt, images, modelTier: opts.modelTier || 'default' });
     await new Promise(ok => setTimeout(ok, 50));
+    // 명함 읽기: 고정 추출 결과(직함을 이름에 붙여 돌려줘 보드가 나누는지 확인)
+    if (prompt.includes('[명함]')) return { org:'[테스트] 명함정밀', orgType:'sogongin', orgTypeWhy:'(목) 제조 업체명', name:'[테스트] 명함 대표', title:'',
+      mobile:'010-0000-7777', tel:'02-000-7777', email:'card@example.com', kakao:'', address:'서울 금천구 가산디지털1로 1', addressDetail:'3층', website:'example.com', other:'팩스 02-000-7778' };
     return [...prompt.matchAll(/^\[id:([\w-]+)\] (.*)$/gm)].map(([, id, line]) => /지원 불가/.test(line)
       ? { id, verdict:'fix', evidence:'(목) 2쪽: 설치비 1,000,000원', comment:'(목) 설치·운송비는 지원 불가 — 사업비에서 빼 주세요' }
       : { id, verdict:'pass', evidence:'(목) 문서 근거', comment:'' });

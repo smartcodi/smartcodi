@@ -3318,7 +3318,10 @@ function openCardImport(){
   const img = document.createElement('input'); img.type = 'file'; img.id = 'ci-img'; img.accept = 'image/*'; img.multiple = true;
   sf2.append(il, img); m.append(sf2);
   let maxImg = 0;
-  sampleFn?.limits?.().then(l => { if (l?.images){ maxImg = l.images.maxCount; img.accept = l.images.mediaTypes.join(','); sf2.hidden = false; } }).catch(() => {});
+  sampleFn?.limits?.().then(l => {
+    if (l?.images){ maxImg = l.images.maxCount; img.accept = l.images.mediaTypes.join(','); sf2.hidden = false; }
+    else sf.append(el('div','rnote','이 화면에서는 Claude에게 사진을 보낼 수 없어 텍스트만 받습니다. 사진 속 글자는 휴대폰 사진 앱의 «텍스트 복사»로 옮길 수 있습니다.'));
+  }).catch(() => {});
   const bar = el('div','sendbar');
   const go = el('button','btn primary','명함 읽기'), stop = el('button','btn ghost','멈추기'), cl = el('button','btn ghost','닫기');
   stop.hidden = true; cl.addEventListener('click', close);
@@ -3359,6 +3362,7 @@ function cardBtn(){
    대화·이미지는 이 화면 메모리에만 있고 저장하지 않는다. 이미지는 그 턴에만 보낸다(이전 이미지 내용은 명함 값으로 이어진다).
    지금 할 수 있는 일은 명함 등록뿐 — 다른 요청은 못 한다고 답하게 한다. 누른 사람의 Claude 사용량을 쓴다. */
 const assist = { open:false, turns:[], card:null, lastReview:null, imgs:[], busy:null, maxImg:0, types:[], n:0 };
+let sampleState = 'pending';   // use('sample') 결과: pending → ready | none
 const ASSIST_TURNS = 12;   // 보내는 이전 대화 턴 수(오래된 것부터 버림)
 function assistRules(){
   const orgs = [...state.accounts.values()].slice(0, 150).map(a => '- ' + a.name + ' (' + (ROLES[a.type]?.label || a.type) + ')');
@@ -3471,14 +3475,32 @@ function assistBuild(){
   p.append(hd, log, ft);
   document.body.append(p);
   assist.panel = p;
-  sampleFn.limits?.().then(l => { if (l?.images){ assist.maxImg = l.images.maxCount; assist.types = l.images.mediaTypes || []; fi.accept = assist.types.join(','); att.hidden = false; } }).catch(() => {});
+  assist.fi = fi;
   assistIntro();
+  assistCaps();
 }
 function assistIntro(){
   assistBubble('bot', '명함 사진을 붙여 넣거나(Ctrl+V) 끌어다 놓고, 또는 명함 내용을 붙여 넣고 «기관이랑 담당자 등록해 줘»라고 말해 주세요. 읽은 값으로 등록 창을 채워 드리고, 저장은 직접 확인해 누르시면 됩니다.\n· 사진은 저장하지 않습니다 · 대화할 때마다 이 계정의 Claude 사용량을 씁니다');
 }
+/** 이 화면이 Claude·사진을 쓸 수 있는지 확인해 알린다(말없이 숨기지 않는다). sampleState: pending → ready | none */
+function assistCaps(){
+  if (!assist.panel) return;
+  if (sampleState === 'pending'){ assist.send.disabled = true; return; }   // 확인되면 다시 불린다
+  if (!sampleFn){
+    if (!assist.noClaude){ assist.noClaude = true; assistBubble('sys', '이 화면에서는 보드가 Claude를 쓸 수 없어 도우미를 사용할 수 없습니다. claude.ai 웹에서 claude.ai에 로그인한 채로 보드를 열어 주세요. 조직 설정에서 막혀 있을 수도 있습니다. 그동안은 기관·담당자 탭에서 직접 등록할 수 있습니다.'); }
+    assist.send.disabled = true; assist.input.disabled = true;
+    return;
+  }
+  assist.send.disabled = !!assist.denied;
+  if (assist.capsDone) return;
+  assist.capsDone = true;
+  sampleFn.limits?.().then(l => {
+    if (l?.images){ assist.maxImg = l.images.maxCount; assist.types = l.images.mediaTypes || []; assist.fi.accept = assist.types.join(','); assist.att.hidden = false; return; }
+    assist.input.placeholder = '명함 내용을 텍스트로 붙여 넣고 «등록해 줘»라고 적어 보세요';
+    assistBubble('sys', '이 화면에서는 Claude에게 사진을 보낼 수 없습니다(보는 앱이 지원하지 않음). 명함 내용을 텍스트로 붙여 넣어 주세요. 사진 속 글자는 휴대폰 사진 앱의 «텍스트 복사»로 옮길 수 있습니다.');
+  }).catch(() => {});
+}
 function assistToggle(open = !assist.open){
-  if (!sampleFn) return;
   if (!assist.panel) assistBuild();
   assist.open = open; assist.panel.hidden = !open;
   document.getElementById('assistBtn').classList.toggle('on', open);
@@ -5715,7 +5737,8 @@ render();
       if (!isOwner && state.tab === 'admin') state.tab = 'board';
       render();
     });
-    c.use('sample').then(x => { sampleFn = x; document.getElementById('assistBtn').hidden = !x; if (x && (state.tab === 'acc' || state.tab === 'con')) paint(); });   // «명함으로 등록» 버튼   // 사업계획서 점검(Claude). null이면 문서 항목은 사람이 판정
+    document.getElementById('assistBtn').hidden = false;   // claude.ai 안이면 항상 보인다 — 못 쓰는 화면이면 도우미 창이 이유를 알린다
+    c.use('sample').then(x => { sampleFn = x; sampleState = x ? 'ready' : 'none'; assistCaps(); if (x && (state.tab === 'acc' || state.tab === 'con')) paint(); });   // «명함으로 등록» 버튼   // 사업계획서 점검(Claude). null이면 문서 항목은 사람이 판정
   }
 
   db = c && c.use ? await c.use('db') : null;

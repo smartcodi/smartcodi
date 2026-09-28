@@ -167,10 +167,13 @@
       ? { id, verdict:'fix', evidence:'(목) 2쪽: 설치비 1,000,000원', comment:'(목) 설치·운송비는 지원 불가 — 사업비에서 빼 주세요' }
       : { id, verdict:'pass', evidence:'(목) 문서 근거', comment:'' });
   };
-  sampleFn.limits = async () => ({ maxPromptBytes:65536, images:{ maxCount:20, maxInputBytes:20e6, mediaTypes:['image/png','image/jpeg'] } });
+  // 보는 화면의 차이 흉내(새로고침 후 적용): __mock.setView({ noImages }) = 사진 못 보냄(실측: claude.ai 웹 2026-09-29), { noSample } = Claude 못 씀
+  const flag = k => localStorage.getItem('__mock_' + k) === '1';
+  sampleFn.limits = async () => flag('noImages') ? { maxPromptBytes:65536 }
+    : { maxPromptBytes:65536, images:{ maxCount:20, maxInputBytes:20e6, mediaTypes:['image/png','image/jpeg'] } };
 
   const NS = { db, downloads:downloadsNs, mcp, user, assets, sample:sampleFn };
-  window.claude = { use: name => new Promise(ok => setTimeout(() => ok(NS[name] || null), 5)) };
+  window.claude = { use: name => new Promise(ok => setTimeout(() => ok(name === 'sample' && flag('noSample') ? null : NS[name] || null), 5)) };
 
   /* ---------- 테스트용 조작면 ---------- */
   window.__mock = {
@@ -187,6 +190,7 @@
     bump(col){ emit(col); },
     samples,
     setOwner(v){ localStorage.setItem('__mock_owner', v ? '1' : '0'); },
-    reset(){ localStorage.removeItem(KEY); localStorage.removeItem('__mock_owner'); },
+    setView(v = {}){ for (const k of ['noImages','noSample']) localStorage.setItem('__mock_' + k, v[k] ? '1' : '0'); },
+    reset(){ localStorage.removeItem(KEY); localStorage.removeItem('__mock_owner'); localStorage.removeItem('__mock_noImages'); localStorage.removeItem('__mock_noSample'); },
   };
 })();

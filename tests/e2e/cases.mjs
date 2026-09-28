@@ -606,6 +606,24 @@ export async function case2(run){
     await H.closeModals(page);
     await cleanupCase(page, { company:'(없음)', accounts:['[테스트] 목록에서 만든 업체'] });
   });
+  await run.step('C2-29', async () => {
+    // 보는 화면이 사진을 못 보낼 때(실측: claude.ai 웹)·Claude를 못 쓸 때 — 버튼은 보이고 도우미 창이 이유를 먼저 알린다
+    const reopen = async view => { await page.evaluate(v => window.__mock.setView(v), view); await page.reload(); await page.waitForTimeout(700); };
+    await reopen({ noImages:true });
+    if (!(await page.locator('#assistBtn').isVisible())) fail('도우미 버튼이 안 보임(사진 불가 화면)');
+    await page.locator('#assistBtn').click();
+    await hasText(page.locator('#assist .abub.sys'), '사진을 보낼 수 없습니다');
+    if (await page.locator('#assist label', { hasText:'사진' }).isVisible()) fail('사진 첨부 버튼이 보임');
+    if ((await page.locator('#as-input').getAttribute('placeholder')).includes('Ctrl+V')) fail('입력칸 안내가 사진 붙여 넣기 그대로');
+    if (await page.locator('#assist').getByRole('button', { name:'보내기' }).isDisabled()) fail('텍스트는 보낼 수 있어야 함');
+    await reopen({ noSample:true });
+    if (!(await page.locator('#assistBtn').isVisible())) fail('도우미 버튼이 안 보임(Claude 불가 화면)');
+    await page.locator('#assistBtn').click();
+    await hasText(page.locator('#assist .abub.sys'), 'Claude를 쓸 수 없어 도우미를 사용할 수 없습니다');
+    if (!(await page.locator('#assist').getByRole('button', { name:'보내기' }).isDisabled())) fail('Claude 불가인데 보내기가 켜짐');
+    await reopen({});
+    await tab(page, 'board');
+  });
   let m;
   await run.step('C2-06', async () => {
     m = await openSend(page, CO, 3);

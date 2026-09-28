@@ -1,0 +1,18 @@
+# 공개 저장소 — 코드만 올린다 (2026-09-28 결정)
+
+# 원본 참고자료·저작물·발주처 배포본 (doc/는 정본 md와 테스트 문서만 올린다)
+doc/*
+!doc/단계_역할_정본.md
+!doc/테스트/
+
+# 한글 양식 원본, 보드 데이터 내보내기(실데이터 가능)
+forms/
+output/
+
+# 로컬 전용 (개인 계정 메일 등)
+CLAUDE.local.md
+*.code-workspace
+
+# 테스트 의존성·실행 결과
+tests/e2e/node_modules/
+tests/e2e/results/

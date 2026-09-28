@@ -1,0 +1,9 @@
+{
+  "name": "smartcodi-e2e",
+  "private": true,
+  "type": "module",
+  "description": "코디 보드 로컬 하네스 E2E (CASE 1~6). node run.mjs",
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  }
+}

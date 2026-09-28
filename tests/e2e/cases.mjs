@@ -492,6 +492,56 @@ export async function case2(run){
     await until(async () => !(await docsOf(page, 'projects'))[id].visit, '구축지 정리 안 됨');
     await H.closeDrawer(page);
   });
+  const CARD_ORG = '[테스트] 명함정밀', CARD_NAME = '[테스트] 명함';
+  await run.step('C2-25', async () => {
+    // 명함(텍스트) → Claude(목)가 칸을 뽑음 → 기관 창·담당자 창을 미리 채워 열고 사람이 저장
+    await tab(page, 'acc');
+    await page.getByRole('button', { name:'명함으로 등록' }).click();
+    await page.locator('#ci-text').fill(['[테스트] 명함정밀', '[테스트] 명함 대표', 'M 010-0000-7777 T 02-000-7777', 'card@example.com', '서울 금천구 가산디지털1로 1, 3층'].join('\n'));
+    const before = await page.evaluate(() => window.__mock.samples.length);
+    await page.getByRole('button', { name:'명함 읽기' }).click();
+    await until(() => page.locator('.cardres .kv').count(), '미리보기가 안 뜸');
+    const call = await page.evaluate(i => window.__mock.samples[i], before);
+    if (!call.prompt.includes('[명함]') || !call.prompt.includes('card@example.com') || call.images) fail('프롬프트·이미지: ' + call.images);
+    await hasText(page.locator('.cardres'), '[테스트] 명함정밀');
+    if ((await page.locator('#ci-type').inputValue()) !== 'sogongin') fail('유형 추정값이 기본이 아님');
+    if ((await page.locator('#ci-acc').inputValue()) !== '') fail('새 기관이 기본이 아님');
+    await page.getByRole('button', { name:'등록 창 열기' }).click();
+    const val = k => modal(page).locator('#ff-' + k).inputValue();
+    await until(async () => (await val('name')) === CARD_ORG, '기관 창 이름');
+    for (const [k, v] of [['type','sogongin'], ['phone','02-000-7777'], ['address','서울 금천구 가산디지털1로 1'], ['addressDetail','3층']]) if ((await val(k)) !== v) fail('기관 창 ' + k + ': ' + await val(k));
+    if (!(await val('memo')).includes('example.com')) fail('기관 메모에 웹사이트 없음');
+    await H.saveModal(page);
+    await until(async () => (await val('name')) === CARD_NAME, '담당자 창이 이어서 안 열림 / 이름: ' + await val('name').catch(() => ''));
+    for (const [k, v] of [['title','대표'], ['phone','010-0000-7777'], ['email','card@example.com']]) if ((await val(k)) !== v) fail('담당자 창 ' + k + ': ' + await val(k));
+    await H.saveModal(page);
+    const aid = await findId(page, 'accounts', d => d.name === CARD_ORG);
+    await until(async () => !!(await findId(page, 'contacts', d => d.name === CARD_NAME && d.accountId === aid && d.title === '대표')), '담당자 저장·기관 연결 안 됨');
+  });
+  await run.step('C2-26', async () => {
+    // 명함(사진) → 이미지 전달, 같은 기관이면 «기존 기관에 담당자 추가», 같은 이메일·휴대폰이면 중복 경고 → 정리
+    const pg = await page.context().newPage();
+    await pg.setViewportSize({ width:560, height:320 });
+    await pg.setContent('<div style="font:20px sans-serif;padding:30px"><b>[테스트] 명함정밀</b><p>[테스트] 명함 대표</p><p>010-0000-7777 · card@example.com</p></div>');
+    const file = path.join(HERE, 'results', 'card.png');
+    await pg.screenshot({ path:file }); await pg.close();
+    await tab(page, 'con');
+    await page.getByRole('button', { name:'명함으로 등록' }).click();
+    await page.locator('#ci-img').setInputFiles(file);
+    const before = await page.evaluate(() => window.__mock.samples.length);
+    await page.getByRole('button', { name:'명함 읽기' }).click();
+    await until(() => page.locator('.cardres .kv').count(), '미리보기가 안 뜸');
+    const call = await page.evaluate(i => window.__mock.samples[i], before);
+    if (call.images !== 1 || !call.prompt.includes('첨부 이미지 1장')) fail('이미지 전달: ' + call.images);
+    const aid = await findId(page, 'accounts', d => d.name === CARD_ORG);
+    if ((await page.locator('#ci-acc').inputValue()) !== aid) fail('기존 기관이 기본 선택이 아님');
+    if (await page.locator('#ci-type').isVisible()) fail('기존 기관인데 유형 선택이 보임');
+    await hasText(page.locator('.cardres .cdup'), '이미 등록된 담당자일 수 있습니다: ' + CARD_NAME + ' 대표');
+    await page.getByRole('button', { name:'등록 창 열기' }).click();
+    await until(async () => (await modal(page).locator('#ff-accountId').inputValue()) === aid, '담당자 창 기관이 기존 기관이 아님');
+    await H.closeModals(page);
+    await cleanupCase(page, { company:'(없음)', contacts:[CARD_NAME], accounts:[CARD_ORG] });
+  });
   let m;
   await run.step('C2-06', async () => {
     m = await openSend(page, CO, 3);

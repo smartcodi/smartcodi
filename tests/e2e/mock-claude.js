@@ -181,7 +181,7 @@
         const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => last.includes(co));
         const step = { 1:1, 2:2, 3:7, 4:8 }[(last.match(/([1-4])차/) || [])[1]] || 0;
         return { reply:'(목) 끝낸 항목 3개를 찾았습니다. 수행일지는 아직입니다. 아래 카드에서 확인하고 체크를 눌러 주세요.', card:null, quote:null, diag:null, action:'none',
-          progress:{ projectId: proj ? proj[1] : '', step, actual: /오늘/.test(last) ? '오늘' : '',
+          progress:{ projectId: proj ? proj[1] : '', step, actual: /오늘/.test(last) ? '오늘' : /어제/.test(last) ? '어제' : (last.match(/\d{4}-\d{2}-\d{2}/) || [''])[0],
             tasks:[
               { task:'개선과제 공유 및 논의', said:'개선과제 공유' },
               { task:'개선과제 도출', said:'개선과제 도출했고' },

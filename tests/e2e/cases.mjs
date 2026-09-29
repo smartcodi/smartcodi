@@ -906,6 +906,45 @@ export async function case2(run){
       await hasText(page.locator('#assist .abub.sys').last(), '어느 과제의 방문 결과인지');
     } finally { await closeAssist(); await H.closeDrawer(page); }
   });
+  await run.step('C2-37', async () => {
+    // 방문 결과의 완료일 «어제»·명시 날짜: 어제 = today()-1(기존 완료일과 다르면 해제), 명시 날짜는 그대로, 없는 날짜(2월 30일)는 비움
+    try {
+      await H.closeDrawer(page);
+      const pid = await projectId(page, CO);
+      const p0 = (await docsOf(page, 'projects'))[pid], st0 = p0.steps['2'];
+      if (!st0.actual) fail('사전 조건: 2단계 완료일이 있어야 함(C2-36)');
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const say = async text => {
+        const n0 = await page.locator('#assist .pgbox').count();
+        await page.locator('#as-input').fill(text); await page.locator('#as-input').press('Enter');
+        await until(async () => (await page.locator('#assist .pgbox').count()) > n0, '체크 카드가 안 뜸: ' + text, 15000);
+        return page.locator('#assist .pgbox').last();
+      };
+      const yest = await page.evaluate("addDays(today(), -1)");
+      const b1 = await say(CO + ' 2차 방문 어제 끝남. 개선과제 도출했고.');
+      const d1 = b1.locator('.qitem', { hasText:'완료일' });
+      await hasText(d1, yest);
+      if (yest !== st0.actual) {
+        await hasText(d1, '기존 완료일');
+        if (await d1.locator('input').isChecked()) fail('기존 완료일과 다른 «어제»가 선택됨');
+      }
+      const b2 = await say(CO + ' 2차 방문 2026-02-30 끝남. 개선과제 도출했고.');
+      await hasText(b2, '날짜로 읽지 못해');
+      if (await b2.locator('.qitem', { hasText:'완료일' }).count()) fail('없는 날짜가 완료일로 제안됨');
+      const b3 = await say(CO + ' 2차 방문 2026-09-15 끝남. 개선과제 도출했고.');
+      const d3 = b3.locator('.qitem', { hasText:'완료일' });
+      await hasText(d3, '2026-09-15');
+      if (st0.actual !== '2026-09-15') {
+        if (await d3.locator('input').isChecked()) fail('기존 완료일과 다른 명시 날짜가 선택됨');
+        await d3.locator('input').check();
+        await b3.getByRole('button', { name:'선택한 항목 체크 (1)' }).click();
+        await until(async () => (await stepOf(2)).actual === '2026-09-15', '명시 날짜가 저장 안 됨');
+      }
+      const p1 = (await docsOf(page, 'projects'))[pid];
+      if (p1.steps['2'].status !== st0.status || p1.currentStep !== p0.currentStep) fail('단계 상태·현재 단계가 바뀜');
+    } finally { await closeAssist(); await H.closeDrawer(page); }
+  });
   await run.step('C2-32', async () => {
     // 화면 구성: 위 탭 7개(묶음) + 보기 전환 칩 · 기관별 보기에서 담당자 펼침·검색 강조 · 통합 검색으로 담당자 상세
     await H.closeDrawer(page);

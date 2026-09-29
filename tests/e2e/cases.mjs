@@ -717,10 +717,10 @@ export async function case2(run){
       const supId = await findId(page, 'accounts', d => d.name === SUP), pid = await projectId(page, CO);
       if ((await box.locator('select[id$="-sup"]').inputValue()) !== supId) fail('공급기업 자동 선택 안 됨');
       if ((await box.locator('select[id$="-proj"]').inputValue()) !== pid) fail('과제 자동 선택 안 됨');
-      const cnc = box.locator('tbody tr', { hasText:'CNC 레이저 용접 시스템' });
+      const cnc = box.locator('.qitem', { hasText:'CNC 레이저 용접 시스템' });
       await hasText(cnc, '기존 장비 사용'); await hasText(cnc, '단가 갱신'); await hasText(cnc, '이 과제에 이미 자산 있음');
       if (await cnc.locator('input[type=checkbox]').first().isChecked()) fail('이미 자산이 있는 품목이 선택됨');
-      await hasText(box.locator('tbody tr', { hasText:'견적 계량기' }), '새 장비');
+      await hasText(box.locator('.qitem', { hasText:'견적 계량기' }), '새 장비');
       const cncId = await findId(page, 'products', d => d.name === 'CNC 레이저 용접 시스템');
       const nProd = Object.keys(await docsOf(page, 'products')).length;
       await box.getByRole('button', { name:'선택한 2건 등록' }).click();

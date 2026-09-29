@@ -249,13 +249,19 @@ main{flex:1 1 auto;overflow:auto;padding:14px 16px 18px;-webkit-overflow-scrolli
 .outs{display:flex;flex-direction:column;gap:6px}
 .pout .lact{align-items:center}
 .abub .cardbox .kv i{width:60px}
-.qwrap{overflow-x:auto;margin-top:8px}
-.qtable{border-collapse:collapse;width:100%;font-size:12px}
-.qtable th{text-align:left;font-weight:600;color:var(--ink-2);padding:4px 6px;border-bottom:1px solid var(--line)}
-.qtable td{padding:5px 6px;border-top:1px solid var(--line-soft);vertical-align:top}
-.qtable select,.qtable input[type=number]{font-size:12px;padding:2px 4px;max-width:92px}
-.qtable .qsub{font-size:11px;color:var(--ink-3);margin-top:2px}
-.qtable .qwarn{font-size:11px;color:var(--warn);margin-top:2px}
+.qitems{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.qitem{border:1px solid var(--line-soft);border-radius:7px;padding:7px 9px;background:var(--surface);font-size:12px;display:flex;flex-direction:column;gap:3px}
+.qitem .qhead{display:flex;gap:7px;align-items:flex-start;cursor:pointer}
+.qitem .qhead input{margin:2px 0 0;flex:0 0 auto}
+.qitem .qname{flex:1 1 auto;font-weight:600;word-break:break-word}
+.qitem .qprice{flex:0 0 auto;white-space:nowrap;font-family:"IBM Plex Mono",monospace;color:var(--ink-2)}
+.qitem .qctl{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:3px}
+.qitem select,.qitem input[type=number]{border:1px solid var(--line);background:var(--surface-2);border-radius:6px;font-size:12px;padding:3px 5px}
+.qitem input[type=number]{width:64px}
+.qitem .qstate{display:flex;gap:4px 10px;flex-wrap:wrap;align-items:center;color:var(--ink-2)}
+.qitem .qsub{font-size:11px;color:var(--ink-3)}
+.qitem .qwarn{font-size:11px;color:var(--warn)}
+@media (max-width:640px){ .qitem select,.qitem input[type=number]{font-size:16px} }
 .afoot{border-top:1px solid var(--line);padding:10px 12px;display:flex;flex-direction:column;gap:6px}
 .afoot textarea{border:1px solid var(--line);background:var(--surface-2);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;min-height:44px;max-height:160px;font-family:inherit}
 .abar{display:flex;gap:6px;align-items:center}
@@ -522,7 +528,7 @@ button.gcal{cursor:pointer;font-family:inherit}
     <select class="ctl" id="fnotice" aria-label="공고 필터"><option value="">공고 전체</option><option value="main">원공고</option><option value="extra">추가공고</option><option value="none">공고 미확인</option></select>
     <select class="ctl" id="fcoord" aria-label="담당 코디네이터 필터"><option value="">코디 전체</option></select>
     <label class="tog"><input type="checkbox" id="hideDone"> 완료 숨기기</label>
-    <button class="btn" id="assistBtn" type="button" title="명함 사진을 붙여 넣고 말로 기관·담당자를 등록합니다(Claude 사용)" hidden>💬 도우미</button>
+    <button class="btn" id="assistBtn" type="button" title="명함·견적서로 기관·담당자·장비를 등록하고 양식 초안을 씁니다(Claude 사용)" hidden>💬 도우미</button>
     <button class="btn primary" id="newBtn">+ 새 과제</button>
   </div>
   <div class="legend" id="legend">
@@ -3684,34 +3690,39 @@ function quoteReview(q, idp, pid0){
     });
   });
   projSel.addEventListener('change', () => refresh());
-  const wrap = el('div','qwrap'), tb = document.createElement('table'); tb.className = 'qtable';
-  const hr = document.createElement('tr');
-  for (const h of ['등록', '구분', '장비', '수량', '단위', '견적 단가', '보드']) hr.append(Object.assign(document.createElement('th'), { textContent:h }));
-  tb.createTHead().append(hr); tb.createTBody();
+  // 품목마다 카드 한 장(좁은 도우미 창·휴대폰에서 표는 열이 눌린다): 체크·이름·단가 / 사양·비고 / 구분·수량·단위 / 보드 상태
+  const list = el('div','qitems');
   const rows = q.items.map((it, i) => {
-    const tr = document.createElement('tr'), cell = () => tr.appendChild(document.createElement('td'));
+    const card = el('div','qitem');
     const chk = document.createElement('input'); chk.type = 'checkbox'; chk.checked = true; chk.setAttribute('aria-label', it.name + ' 등록');
     const kindSel = document.createElement('select'); kindSel.setAttribute('aria-label','구분');
-    for (const [v, t2] of [['', '?'], ...Object.entries(PRODUCT_KIND)]) kindSel.append(new Option(t2, v));
+    for (const [v, t2] of [['', '구분?'], ...Object.entries(PRODUCT_KIND)]) kindSel.append(new Option(t2, v));
     kindSel.value = it.kind;
     const qtyIn = document.createElement('input'); qtyIn.type = 'number'; qtyIn.min = '1'; qtyIn.value = it.qty === '' ? '' : String(it.qty); qtyIn.setAttribute('aria-label','수량');
     const unitSel = document.createElement('select'); unitSel.setAttribute('aria-label','단위');
-    for (const u of ['', ...PRODUCT_UNITS]) unitSel.append(new Option(u || '?', u));
+    for (const u of ['', ...PRODUCT_UNITS]) unitSel.append(new Option(u || '단위?', u));
     unitSel.value = it.unit;
-    cell().append(chk);
-    const kc = cell(); kc.append(kindSel); if (it.kindWhy) kc.append(el('div','qsub', it.kindWhy));
-    const nc = cell(); nc.append(el('div', null, (i + 1) + '. ' + [it.name, it.model].filter(Boolean).join(' ')));
-    for (const s of [it.spec, it.note && '비고: ' + it.note]) if (s) nc.append(el('div','qsub', s));
-    const qc = cell(); qc.append(qtyIn); if (it.qty === '') qc.append(el('div','qwarn','수량 확인'));
-    const uc = cell(); uc.append(unitSel); if (it.unitRaw && it.unitRaw !== it.unit) uc.append(el('div','qsub', '원문 ' + it.unitRaw));
-    cell().append(el('div', null, it.unitPrice !== '' ? won(it.unitPrice) : it.priceRaw || '—'));
-    const bc = cell();
+    const head = el('label','qhead');
+    head.append(chk, el('span','qname', (i + 1) + '. ' + [it.name, it.model].filter(Boolean).join(' ')),
+      el('span','qprice', it.unitPrice !== '' ? won(it.unitPrice) : it.priceRaw || '단가 없음'));
+    card.append(head);
+    for (const s of [it.spec, it.note && '비고: ' + it.note, it.kindWhy && '구분 근거: ' + it.kindWhy]) if (s) card.append(el('div','qsub', s));
+    const ctl = el('div','qctl');
+    ctl.append(kindSel, qtyIn, unitSel);
+    if (it.unitRaw && it.unitRaw !== it.unit) ctl.append(el('span','qsub', '원문 ' + it.unitRaw));
+    if (it.qty === '') ctl.append(el('span','qwarn','수량 확인'));
+    const bc = el('div','qstate');
+    card.append(ctl, bc);
     const r = { it, chk, kindSel, qtyIn, unitSel, bc, upd:null, touched:false };
     chk.addEventListener('change', () => { r.touched = true; count(); });
-    tb.tBodies[0].append(tr);
+    // 사람이 고친 값은 품목에 바로 반영 — 다시 그려도 유지되고, 다음 턴 [현재 견적서]로 Claude에게도 간다
+    kindSel.addEventListener('change', () => { it.kind = kindSel.value; });
+    unitSel.addEventListener('change', () => { it.unit = unitSel.value; });
+    qtyIn.addEventListener('change', () => { it.qty = numOrBlank(qtyIn.value); });
+    list.append(card);
     return r;
   });
-  wrap.append(tb); box.append(wrap);
+  box.append(list);
   box.append(el('div','rnote','견적서에 적힌 값만 옮겼습니다. 단가는 장비에, 수량은 자산에 들어가고 자산 상태는 «검토 중»입니다(발주·설치는 자산에서 직접). 월(임차) S/W의 수량은 개월 수입니다.'));
   const bar = el('div','sendbar'), go = el('button','btn primary'), err = el('div','err'); err.hidden = true;
   bar.append(go); box.append(bar, err);

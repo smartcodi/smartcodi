@@ -164,7 +164,7 @@ export async function case1(run){
   });
   await run.step('C1-11', async () => {
     await tab(page, 'asset');
-    await hasText(page.locator('#asset .chips'), '검토 중 4');
+    await hasText(page.locator('#asset .chips:not(.subnav)'), '검토 중 4');
   });
   await run.step('C1-12', async () => {
     await H.setStatus(page, CO, 3, 'doing'); await H.setStatus(page, CO, 4, 'doing');
@@ -690,6 +690,43 @@ export async function case2(run){
       await H.closeDrawer(page);
     } finally { await closeAssist(); }
   });
+  await run.step('C2-32', async () => {
+    // 화면 구성: 위 탭 7개(묶음) + 보기 전환 칩 · 기관별 보기에서 담당자 펼침·검색 강조 · 통합 검색으로 담당자 상세
+    await H.closeDrawer(page);
+    const tabs = (await page.locator('nav.tabs .tab:not(.tabmore):visible').allInnerTexts()).map(t => t.trim());
+    if (tabs.join('|') !== '보드|할 일|과제|기관·담당자|장비·자산|보고서|관리') fail('위 탭: ' + tabs.join('|'));
+    await tab(page, 'today');
+    await hasText(page.locator('#today .subnav'), '목록'); await hasText(page.locator('#today .subnav'), '달력');
+    await page.locator('#today .subnav [data-key="sched"]').click();
+    await until(() => page.locator('#sched').isVisible(), '달력 보기로 안 바뀜');
+    await hasText(page.locator('#sched'), '구글 캘린더에 올리기');
+    await page.locator('#tabBoard').click(); await page.locator('#tabTodo').click();
+    await until(() => page.locator('#sched').isVisible(), '할 일을 다시 누르면 마지막 보기(달력)로 가야 함');
+    await tab(page, 'act');
+    await hasText(page.locator('#act .subnav [data-key="act"]'), '연락 이력');
+    await tab(page, 'acc');
+    const supRow = page.locator('#acc tbody tr:not(.absub)', { hasText:SUP });
+    if (await page.locator('#acc tbody tr.absub', { hasText:SALES }).count()) fail('펼치기 전에 담당자가 보임');
+    await supRow.locator('.abtg').click();
+    await until(() => page.locator('#acc tbody tr.absub', { hasText:SALES }).count(), '▸를 눌러도 담당자가 안 펼쳐짐');
+    await supRow.locator('.abtg').click();
+    await until(async () => !(await page.locator('#acc tbody tr.absub', { hasText:SALES }).count()), '▾로 안 접힘');
+    await page.locator('#ab-q').fill('C2영업');
+    await until(() => page.locator('#acc tbody tr.absub.hit', { hasText:SALES }).count(), '검색으로 담당자가 펼쳐지고 강조되지 않음');
+    await page.locator('#acc tbody tr.absub.hit', { hasText:SALES }).click();
+    await hasText(page.locator('.drawer .dr-head'), SALES);
+    await H.closeDrawer(page);
+    await page.locator('#ab-q').fill('');
+    await page.locator('#acc .subnav [data-key="con"]').click();
+    await until(() => page.locator('#con tbody tr', { hasText:SALES }).count(), '담당자 전체 보기에 담당자 표가 없음');
+    await tab(page, 'prod'); await page.locator('#prod .subnav [data-key="asset"]').click();
+    await until(() => page.locator('#asset').isVisible(), '장비 → 자산 전환 안 됨');
+    const t = await search(page, 'C2영업');
+    if (!t.includes('담당자')) fail('통합 검색에 담당자 없음');
+    await page.locator('#qres button', { hasText:SALES }).click();
+    await hasText(page.locator('.drawer'), '연락처');
+    await clearSearch(page); await H.closeDrawer(page);
+  });
   let m;
   await run.step('C2-06', async () => {
     m = await openSend(page, CO, 3);
@@ -802,8 +839,8 @@ export async function case3(run){
     await hasText(card(page, CO).locator('.nextdue'), 'D-30');
   });
   await run.step('C3-09', async () => {
-    await tab(page, 'sched');
-    const row = page.locator('#sched tbody tr', { hasText:CO });
+    await tab(page, 'today');   // 예정 일정 표는 «할 일 → 목록»(30일 뒤 = «그 뒤 예정»)
+    const row = todaySec(page, '그 뒤 예정').locator('tbody tr', { hasText:CO });
     await row.getByRole('button', { name:'등록', exact:true }).click();
     await until(() => row.locator('a.gcal.on').count(), '«등록됨»으로 안 바뀜');
     const ev = Object.values(await page.evaluate(() => window.__mock.events()));
@@ -820,16 +857,18 @@ export async function case3(run){
   await run.step('C3-11', async () => {
     await H.setPlanned(page, CO, 6, Td(35));
     await tab(page, 'today');
-    await hasText(todaySec(page, '캘린더 미등록').locator('tr', { hasText:CO }), '날짜 변경 (캘린더 ' + Td(30) + ')');
+    const row = todaySec(page, '그 뒤 예정').locator('tbody tr', { hasText:CO });
+    await until(() => row.getByRole('button', { name:'날짜 수정' }).count(), '예정일을 바꿨는데 «날짜 수정»이 안 뜸');
+    if ((await row.getByRole('button', { name:'날짜 수정' }).getAttribute('title')) !== '캘린더 ' + Td(30) + ' → 보드 예정일 ' + Td(35)) fail('날짜 수정 안내');
   });
   await run.step('C3-12', async () => {
-    await tab(page, 'sched');
-    await page.locator('#sched tbody tr', { hasText:CO }).getByRole('button', { name:'날짜 수정' }).click();
+    await tab(page, 'today');
+    await todaySec(page, '그 뒤 예정').locator('tbody tr', { hasText:CO }).getByRole('button', { name:'날짜 수정' }).click();
     await until(async () => Object.values(await page.evaluate(() => window.__mock.events()))[0].startTime === Td(35) + 'T00:00:00', '이벤트 날짜 안 바뀜');
     const acts = (await docsOf(page, 'projects'))[pid].activities || [];
     if (!acts.some(a => (a.subject || '').includes('날짜 변경 ' + Td(30) + ' → ' + Td(35)))) fail('날짜 변경 활동 없음');
     await tab(page, 'today');
-    await until(async () => !(await todaySec(page, '캘린더 미등록').locator('tr', { hasText:CO }).count()), '미등록 목록에 남음');
+    await until(() => todaySec(page, '그 뒤 예정').locator('tbody tr', { hasText:CO }).locator('a.gcal.on').count(), '날짜 수정 뒤 «등록됨»으로 안 돌아옴');
   });
   const NOTE2 = '실제 경영 판단은 담당 이사 — 서명·결재 주체 확인 필요';
   let draft2;
@@ -891,7 +930,8 @@ export async function case4(run, { mobilePage }){
   await run.step('C4-04', async () => {
     await mp.waitForTimeout(500);
     if (!(await mp.locator('#tabMore').isVisible())) fail('더보기 버튼 안 보임');
-    if (await mp.locator('#tabAcc').isVisible()) fail('기관 탭이 하단바에 보임');
+    if (await mp.locator('#tabOrg').isVisible()) fail('기관·담당자 탭이 하단바에 보임');
+    for (const t of ['#tabBoard', '#tabTodo', '#tabProj', '#tabReport']) if (!(await mp.locator(t).isVisible())) fail('하단바에 없음: ' + t);
     const pos = await mp.locator('nav.tabs').evaluate(n => getComputedStyle(n).position);
     if (pos !== 'fixed') fail('탭바 position ' + pos);
     const over = await mp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -928,9 +968,10 @@ export async function case4(run, { mobilePage }){
     await H.closeDrawer(mp);
     await mp.locator('#tabMore').tap();
     await until(() => mp.locator('#moreMenu').isVisible(), '더보기 메뉴 안 열림');
-    await mp.locator('#moreMenu button', { hasText:'자산' }).tap();
-    await until(async () => (await mp.locator('#tabMore').innerText()).includes('자산 ▴'), '더보기 라벨 안 바뀜');
-    if (!(await mp.locator('#asset').isVisible())) fail('자산 목록 안 보임');
+    await mp.locator('#moreMenu button', { hasText:'장비·자산' }).tap();
+    await until(async () => (await mp.locator('#tabMore').innerText()).includes('장비·자산 ▴'), '더보기 라벨 안 바뀜');
+    await mp.locator('.subnav:visible [data-key="asset"]').tap();
+    await until(() => mp.locator('#asset').isVisible(), '자산 목록 안 보임');
   });
   await H.syncBack(mp, page);   // 휴대폰에서 바꾼 상태를 데스크톱으로
   await run.step('C4-07', async () => {
@@ -992,7 +1033,7 @@ export async function case5(run){
   await run.step('C5-02', async () => {
     await tab(page, 'today');
     await hasText(todaySec(page, '기한 경과').locator('tr', { hasText:CO }), '1. 1차 방문');
-    await hasText(todaySec(page, '7일 안의 방문').locator('tr', { hasText:CO }), '2. 2차 방문');
+    await hasText(todaySec(page, '이번 주 예정').locator('tr', { hasText:CO }), '2. 2차 방문');
   });
   await run.step('C5-03', async () => {
     await H.setStatus(page, CO, 1, 'done');

@@ -1018,6 +1018,36 @@ export async function case2(run){
       if (p1.steps['8'].planned !== p0.steps['8'].planned) fail('저장하지 않은 8단계 예정일이 바뀜');
     } finally { await closeAssist(); await H.closeDrawer(page); }
   });
+  await run.step('C2-39', async () => {
+    // 예정일 잡기, 캘린더 커넥터(mcp) 없음: «예정일 저장» 뒤 등록 버튼 대신 구글 캘린더 «일정 만들기» 링크(종일). 이벤트는 만들어지지 않음
+    try {
+      await H.closeDrawer(page);
+      const pid = await projectId(page, CO);
+      const d = await page.evaluate("addDays(today(), 30)"), d1 = await page.evaluate("addDays('" + d + "', 1)");
+      const n0 = Object.keys(await page.evaluate(() => window.__mock.events())).length;
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      await page.evaluate(() => { window.__mcp0 = mcp; mcp = null; });
+      try {
+        const c0 = await page.locator('#assist .plbox').count();
+        await page.locator('#as-input').fill(CO + ' 4차 방문 ' + d + '로 잡혔어'); await page.locator('#as-input').press('Enter');
+        await until(async () => (await page.locator('#assist .plbox').count()) > c0, '일정 카드가 안 뜸', 15000);
+        const box = page.locator('#assist .plbox').last();
+        await hasText(box.locator('.pldate'), d);
+        if (await box.locator('a, button').filter({ hasText:'캘린더' }).count()) fail('예정일 저장 전에 캘린더 버튼·링크가 보임');
+        await box.getByRole('button', { name:'예정일 저장' }).click();
+        await until(async () => (await docsOf(page, 'projects'))[pid].steps['8'].planned === d, '예정일 저장 안 됨');
+        const a = box.getByRole('link', { name:'구글 캘린더에 추가 ↗' });
+        await until(() => a.count(), '«구글 캘린더에 추가» 링크가 안 뜸');
+        const href = await a.getAttribute('href');
+        for (const t of ['calendar.google.com/calendar/render', 'action=TEMPLATE', 'dates=' + d.replace(/-/g, '') + '/' + d1.replace(/-/g, ''), encodeURIComponent('[스마트제조] ' + CO + ' · 8. 4차 방문')]) if (!href.includes(t)) fail('링크에 없음: ' + t + ' / ' + href);
+        if (await box.getByRole('button', { name:'캘린더에 등록' }).count()) fail('mcp 없는데 «캘린더에 등록» 버튼이 있음');
+      } finally { await page.evaluate(() => { mcp = window.__mcp0; }); }
+      if (Object.keys(await page.evaluate(() => window.__mock.events())).length !== n0) fail('mcp 없는데 캘린더 이벤트가 만들어짐');
+      await closeAssist();   // 도우미가 상세 패널을 가리지 않게
+      await H.setPlanned(page, CO, 8, '');
+    } finally { await closeAssist(); await H.closeDrawer(page); }
+  });
   await run.step('C2-32', async () => {
     // 화면 구성: 위 탭 7개(묶음) + 보기 전환 칩 · 기관별 보기에서 담당자 펼침·검색 강조 · 통합 검색으로 담당자 상세
     await H.closeDrawer(page);

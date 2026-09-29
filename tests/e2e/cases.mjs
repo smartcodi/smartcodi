@@ -3,7 +3,7 @@ import * as H from './helpers.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const { T, Td, md, until, fail, hasText, lacksText, docsOf, projectId, findId, modal, tab, stepBody } = H;
+const { T, Td, md, until, fail, hasText, lacksText, docsOf, projectId, findId, modal, tab, stepBody, PD } = H;
 
 const COORD_ORG = '[테스트] 코디기관', COORD = '[테스트] 코디';
 const MAIL = 'tester@example.com';   // 목 발송 — 실제로 나가지 않음(공개용 자리표시자)
@@ -41,7 +41,7 @@ const chip = (m, text) => m.locator('.chip', { hasText:text });
 /** 과제 상세 «도입 장비» 아래 견적 합계·S/W 한도 줄과 초과 경고(없으면 '') */
 async function budget(page, company){
   await H.openProject(page, company);
-  const d = page.locator('.drawer');
+  const d = page.locator(PD);
   await until(() => d.locator('.bsum').count(), '견적 합계 줄 없음');
   const sum = await d.locator('.bsum').innerText();
   const bw = d.locator('.bsum + .bwarn');   // 과제 요약 줄 바로 뒤의 경고(4단계 체크포인트의 경고는 따로 있다)
@@ -52,7 +52,7 @@ async function budget(page, company){
 const todaySec = (page, title) => page.locator('#today section').filter({ has: page.locator('h2', { hasText:title }) });
 async function editAsset(page, company, productLabelText, values){
   await H.openProject(page, company);
-  await page.locator('.drawer .rrow', { hasText:productLabelText }).first().click();
+  await page.locator(PD + ' .rrow', { hasText:productLabelText }).first().click();   // 과제 상세(가운데 칸) → 자산 상세(떠 있는 패널)
   await page.locator('.drawer .dr-head').getByRole('button', { name:'수정' }).click();
   await H.fillForm(page, values);
   await H.saveModal(page);
@@ -157,8 +157,8 @@ export async function case1(run){
   await run.step('C1-10', async () => {
     for (const p of PRODUCTS) await H.addAsset(page, CO, p.name, { qty:p.qty });
     await H.openProject(page, CO);
-    await hasText(page.locator('.drawer'), '도입 장비 4건');
-    await hasText(page.locator('.drawer .rrow', { hasText:'SMUS-800' }), '검토 중 · 4개');
+    await hasText(page.locator(PD), '도입 장비 4건');
+    await hasText(page.locator(PD + ' .rrow', { hasText:'SMUS-800' }), '검토 중 · 4개');
     await H.closeDrawer(page); await tab(page, 'prod');
     await hasText(page.locator('#prod tbody tr', { hasText:'SMUS-800' }), '1건 · 4개');
   });
@@ -197,7 +197,7 @@ export async function case1(run){
   });
   await run.step('C1-15', async () => {
     for (let n = 1; n <= 8; n++){ await H.checkAllDocs(page, CO, n); await H.setStatus(page, CO, n, 'done'); }
-    if (await page.locator('.drawer .step-body .notice').count()) fail('산출물을 다 체크했는데 누락 알림');
+    if (await page.locator(PD + ' .step-body .notice').count()) fail('산출물을 다 체크했는데 누락 알림');
     const p = (await docsOf(page, 'projects'))[pid];
     if (p.currentStep !== 9) fail('currentStep ' + p.currentStep);
     for (let n = 1; n <= 8; n++) if (p.steps[n].actual !== T) fail(n + '단계 완료일 ' + p.steps[n].actual);
@@ -238,7 +238,7 @@ export async function case2(run){
     await H.addAsset(page, CO, 'CNC 레이저 용접 시스템', { qty:1 });
     await H.addAsset(page, CO, 'ProdEX AI Smart', { qty:6 });
     await H.openProject(page, CO);
-    await hasText(page.locator('.drawer .rrow', { hasText:'ProdEX' }), '검토 중 · 6월(임차)');
+    await hasText(page.locator(PD + ' .rrow', { hasText:'ProdEX' }), '검토 중 · 6월(임차)');
   });
   await run.step('C2-04', async () => {
     await H.addNote(page, CO, 3, "견적 H/W 1 EA — 현황의 '2대 추가 도입'과 불일치, 확인 필요");
@@ -349,7 +349,8 @@ export async function case2(run){
     for (const t of ['S/W 한도 3,666,667원 초과', 'S/W 임차 기간 초과(ProdEX AI Smart)', '현물 6,750,000원 부족', '현물 목표를 채울 수 없음(최대 9,000,000원)']) await hasText(pl, t);
     await lacksText(pl, '계상 개월이 사업기간 초과');
     await pl.click();
-    await until(() => page.locator('.drawer .pcheck').count(), '행을 눌러도 4단계 체크포인트가 안 열림');
+    await until(() => page.locator(PD + ' .pcheck').count(), '행을 눌러도 4단계 체크포인트가 안 열림');
+    if (!(await page.locator('#work').isVisible())) fail('할 일 행이 과제 탭 «목록»으로 이동하지 않음');
     await H.closeDrawer(page);
   });
   await run.step('C2-18', async () => {
@@ -475,7 +476,7 @@ export async function case2(run){
   await run.step('C2-24', async () => {
     // 지도 출발지: 비워 두면 현재 위치(브라우저 위치)를 자동으로 넣는다 → 입력하면 그 값 → «현재 위치로»로 되돌림
     const id = await H.openProject(page, CO);
-    const d = page.locator('.drawer');
+    const d = page.locator(PD);
     await d.getByRole('button', { name:'구축지 따로 입력' }).click();
     await page.locator('#vs-' + id + '-address').fill('서울 중구 세종대로 110');
     await page.locator('#vs-' + id + '-address').press('Tab');
@@ -828,11 +829,12 @@ export async function case2(run){
       await hasText(box, '보드에 입력된 값으로 만든 현황');
       if (JSON.stringify((await docsOf(page, 'projects'))[pid]) !== doc0) fail('현황 조회로 과제가 바뀜');
       await box.getByRole('button', { name:'과제 열기' }).click();
-      await until(async () => !(await page.locator('#assist').isVisible()), '«과제 열기» 뒤 도우미가 안 닫힘');
-      await until(() => page.locator('.drawer h2', { hasText:CO }).count(), '«과제 열기»로 과제 상세가 안 열림');
+      await until(() => page.locator(PD + ' h2', { hasText:CO }).count(), '«과제 열기»로 과제 상세가 안 열림');
+      if (!(await page.locator('#work').isVisible())) fail('«과제 열기»가 과제 탭 «목록»으로 이동하지 않음');
+      if (!(await page.locator('#assist').isVisible())) fail('«과제 열기» 뒤 도우미가 닫힘(넓은 화면은 오른쪽 칸에 그대로)');
+      const cs = Math.min(p.currentStep || 1, 8);
+      if (!(await page.locator('#st-' + pid + '-' + cs).count())) fail('«과제 열기»로 현재 단계(' + cs + ')가 안 펼쳐짐');
       // 상세가 열린 채로 업체명 없이 물으면 열린 과제의 카드(목은 projectId "")
-      await page.locator('#assistBtn').dispatchEvent('click');
-      await until(() => page.locator('#assist').isVisible(), '도우미가 다시 안 열림');
       const r2 = await ask('뭐가 남았어?');
       await hasText(r2.box.locator('.svco'), CO);
       if (JSON.stringify((await docsOf(page, 'projects'))[pid]) !== doc0) fail('현황 조회로 과제가 바뀜(2)');
@@ -901,7 +903,8 @@ export async function case2(run){
       await until(async () => (await stepOf(2)).actual === today, '완료일 «오늘»이 저장 안 됨');
       const p2 = (await docsOf(page, 'projects'))[pid];
       if (p2.steps['2'].status !== st0.status || p2.currentStep !== p0.currentStep) fail('완료일 저장으로 단계 상태·현재 단계가 바뀜');
-      // 과제를 모르면(업체명 없음·열린 과제 없음) 카드 없이 되묻기
+      // 과제를 모르면(업체명 없음·열린 과제 없음) 카드 없이 되묻기 — 과제 탭 «목록»을 떠나면 열린 과제가 없다
+      await tab(page, 'board');
       await page.locator('#as-input').fill('2차 방문 끝남. 서명 받음.'); await page.locator('#as-input').press('Enter');
       await hasText(page.locator('#assist .abub.sys').last(), '어느 과제의 방문 결과인지');
     } finally { await closeAssist(); await H.closeDrawer(page); }
@@ -1011,6 +1014,7 @@ export async function case2(run){
       };
       await ask(CO + ' 4차 방문 잡혔어, 날짜는 미정', '날짜를 알 수 없어');
       await ask(CO + ' 4차 방문 2026-02-30로 잡혔어', '날짜로 읽지 못했습니다');
+      await tab(page, 'board');   // 과제 탭 «목록»을 떠나면 열린 과제가 없다
       await ask('3차 방문 ' + d1 + '로 잡혔어', '어느 과제의 일정인지');
       if ((await page.locator('#assist .plbox').count()) !== n0) fail('되물어야 할 때 일정 카드가 뜸');
       const p1 = (await docsOf(page, 'projects'))[pid];
@@ -1044,21 +1048,93 @@ export async function case2(run){
         if (await box.getByRole('button', { name:'캘린더에 등록' }).count()) fail('mcp 없는데 «캘린더에 등록» 버튼이 있음');
       } finally { await page.evaluate(() => { mcp = window.__mcp0; }); }
       if (Object.keys(await page.evaluate(() => window.__mock.events())).length !== n0) fail('mcp 없는데 캘린더 이벤트가 만들어짐');
-      await closeAssist();   // 도우미가 상세 패널을 가리지 않게
-      await H.setPlanned(page, CO, 8, '');
+      await H.setPlanned(page, CO, 8, '');   // 도우미를 연 채로 — 3칸 화면에서는 상세를 가리지 않는다
     } finally { await closeAssist(); await H.closeDrawer(page); }
+  });
+  await run.step('C2-40', async () => {
+    // 과제 3칸 작업 화면(Q-20260929-12): 첫 화면 «할 일» · 과제 탭 «목록 | 칸반 | 표» · 목록 선택 → 가운데 상세(선택 기억) · 단계 필터 칩
+    // · 다른 탭 링크 → 과제 탭으로 이동(«← 뒤로»는 보던 탭·상세로) · 도우미·떠 있는 상세가 과제 상세를 가리지 않음 · 칸반/표 → 목록
+    await H.closeDrawer(page);
+    const pid = await projectId(page, CO);
+    await page.reload(); await page.waitForTimeout(600);
+    if (!(await page.locator('#today').isVisible()) || (await page.locator('#tabTodo').getAttribute('aria-selected')) !== 'true') fail('첫 화면이 «할 일»이 아님');
+    if (await page.locator('#work').isVisible()) fail('첫 화면에 과제 작업 화면이 보임');
+    await tab(page, 'work');
+    const keys = await page.locator('#wkbar .subnav [data-key]').evaluateAll(bs => bs.map(b => b.dataset.key + ':' + b.textContent));
+    if (keys.join('|') !== 'work:목록|board:칸반|proj:표') fail('보기 칩: ' + keys.join('|'));
+    const row = page.locator('#wklist .wkrow[data-id="' + pid + '"]');
+    await hasText(row, CO); await hasText(row, '원공고');
+    await row.click();
+    await until(() => page.locator(PD + ' h2', { hasText:CO }).count(), '목록 행을 눌러도 가운데 칸에 상세가 안 뜸');
+    if (!(await row.evaluate(n => n.classList.contains('on')))) fail('선택한 행 강조 없음');
+    if ((await page.evaluate(() => localStorage.getItem('smartcodi.selProject'))) !== pid) fail('선택 과제가 기억되지 않음');
+    if (await page.locator('.drawer').count()) fail('과제 상세가 떠 있는 패널로 열림');
+    // 단계 필터 칩: 현재 단계 칩 → 그 과제만, 다른 단계 칩 → 빠짐, 다시 누르면 해제
+    const cur = String(Math.min((await docsOf(page, 'projects'))[pid].currentStep || 1, 9));
+    await page.locator('#wklist .chips [data-step="' + cur + '"]').click();
+    await until(() => row.count(), '현재 단계 칩에서 과제가 빠짐');
+    const other = page.locator('#wklist .chips button:not([disabled])[data-step]:not([data-step=""]):not([data-step="' + cur + '"])');
+    if (await other.count()){ await other.first().click(); await until(async () => !(await row.count()), '다른 단계 칩인데 과제가 보임'); }
+    await page.locator('#wklist .chips [data-step=""]').click();
+    await until(() => row.count(), '«전체» 칩으로 안 돌아옴');
+    // 새로고침 뒤 과제 탭을 열면 고른 과제가 그대로
+    await page.reload(); await page.waitForTimeout(600);
+    await page.locator('#tabProj').click();
+    await until(() => page.locator(PD + ' h2', { hasText:CO }).count(), '새로고침 뒤 고른 과제가 기억되지 않음');
+    // 기관 상세(떠 있는 패널) «관련 과제» → 과제 탭으로 이동 → «← 뒤로» = 기관 탭·기관 상세
+    await tab(page, 'acc');
+    await page.locator('#acc tbody tr:not(.absub)', { hasText:CO }).first().click();
+    await page.locator('.drawer .rrow', { hasText:CO }).first().click();
+    await until(() => page.locator(PD + ' h2', { hasText:CO }).count(), '기관 상세의 과제 링크로 과제 상세가 안 열림');
+    if (!(await page.locator('#work').isVisible())) fail('기관 상세의 과제 링크가 과제 탭으로 이동하지 않음');
+    if (await page.locator('.drawer').count()) fail('과제로 이동했는데 기관 상세가 남음');
+    await page.locator(PD + ' .dr-head').getByRole('button', { name:'← 뒤로' }).click();
+    await until(async () => (await page.locator('.drawer h2', { hasText:CO }).count()) && (await page.locator('#acc').isVisible()), '«← 뒤로»가 기관 탭·기관 상세로 돌아가지 않음');
+    await H.closeDrawer(page);
+    // 도우미를 열면 오른쪽 칸 — 목록·상세가 줄어들 뿐 가려지지 않음. 떠 있는 상세도 도우미 왼쪽
+    await H.openProject(page, CO);
+    const w0 = (await page.locator(PD).boundingBox()).width;
+    try {
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await until(() => page.locator('#assist').isVisible(), '도우미가 안 열림');
+      const a = await page.locator('#assist').boundingBox(), d = await page.locator(PD).boundingBox(), l = await page.locator('#wklist').boundingBox();
+      if (d.x + d.width > a.x + 1) fail('도우미가 과제 상세를 가림: 상세 오른쪽 ' + Math.round(d.x + d.width) + ' > 도우미 왼쪽 ' + Math.round(a.x));
+      if (!l || l.x + l.width > d.x + 1) fail('목록 칸이 상세와 겹치거나 없음');
+      if (d.width >= w0) fail('도우미를 열어도 상세가 줄지 않음(' + w0 + ' → ' + d.width + ')');
+      await page.locator(PD + ' .dr-head').getByRole('button', { name:'기관 보기' }).click();
+      await until(() => page.locator('.drawer').count(), '«기관 보기»로 기관 상세가 안 뜸');
+      const r = await page.locator('.drawer').boundingBox();
+      if (r.x + r.width > a.x + 1) fail('떠 있는 기관 상세가 도우미를 가림');
+      await H.closeDrawer(page);
+      if (!(await page.locator(PD + ' h2', { hasText:CO }).count())) fail('기관 상세를 닫자 과제 상세가 사라짐');
+    } finally { await closeAssist(); }
+    if (Math.abs((await page.locator(PD).boundingBox()).width - w0) > 2) fail('도우미를 닫아도 상세가 안 넓어짐');
+    // 칸반 카드 → 목록 보기 · 표 행 → 목록 보기 (표에 CSV·전체 백업·사업 규칙 유지)
+    await tab(page, 'board');
+    if (!(await page.locator('#board .col[data-col="1"]').count())) fail('칸반 열이 없음');
+    await card(page, CO).click();
+    await until(async () => (await page.locator('#work').isVisible()) && (await page.locator(PD + ' h2', { hasText:CO }).count()), '칸반 카드로 과제 상세가 안 열림');
+    await tab(page, 'proj');
+    for (const b of ['CSV 내보내기', '전체 백업 (JSON)']) if (!(await page.locator('#proj').getByRole('button', { name:b }).count())) fail('표 보기에 없음: ' + b);
+    if (!(await page.locator('#proj .progcard').count())) fail('표 보기에 사업 규칙 카드가 없음');
+    if (!(await page.locator('#newBtn').isVisible())) fail('과제 탭에 «+ 새 과제»가 안 보임');
+    await page.locator('#proj tbody tr', { hasText:CO }).first().click();
+    await until(async () => (await page.locator('#work').isVisible()) && (await page.locator(PD + ' h2', { hasText:CO }).count()), '표 행으로 과제 상세가 안 열림');
+    await tab(page, 'today');
+    if (await page.locator('#newBtn').isVisible()) fail('할 일 탭에 «+ 새 과제»가 보임');
   });
   await run.step('C2-32', async () => {
     // 화면 구성: 위 탭 7개(묶음) + 보기 전환 칩 · 기관별 보기에서 담당자 펼침·검색 강조 · 통합 검색으로 담당자 상세
     await H.closeDrawer(page);
     const tabs = (await page.locator('nav.tabs .tab:not(.tabmore):visible').allInnerTexts()).map(t => t.trim());
-    if (tabs.join('|') !== '보드|할 일|과제|기관·담당자|장비·자산|보고서|관리') fail('위 탭: ' + tabs.join('|'));
+    if (tabs.join('|') !== '할 일|과제|기관·담당자|장비·자산|보고서|관리') fail('위 탭: ' + tabs.join('|'));
+    if (await page.locator('#tabBoard').count()) fail('«보드» 탭이 남아 있음');
     await tab(page, 'today');
     await hasText(page.locator('#today .subnav'), '목록'); await hasText(page.locator('#today .subnav'), '달력');
     await page.locator('#today .subnav [data-key="sched"]').click();
     await until(() => page.locator('#sched').isVisible(), '달력 보기로 안 바뀜');
     await hasText(page.locator('#sched'), '구글 캘린더에 올리기');
-    await page.locator('#tabBoard').click(); await page.locator('#tabTodo').click();
+    await page.locator('#tabProj').click(); await page.locator('#tabTodo').click();
     await until(() => page.locator('#sched').isVisible(), '할 일을 다시 누르면 마지막 보기(달력)로 가야 함');
     await tab(page, 'act');
     await hasText(page.locator('#act .subnav [data-key="act"]'), '연락 이력');
@@ -1107,7 +1183,7 @@ export async function case2(run){
     if (sent.length !== 1 || sent[0].to[0] !== MAIL) fail('발송 기록 ' + JSON.stringify(sent));
     if (!sent[0].body.includes('조정 견적')) fail('고친 본문이 발송되지 않음');
     await H.closeModals(page);
-    const acts = page.locator('.drawer .step').nth(2).locator('.mail').first();
+    const acts = page.locator(PD + ' .step').nth(2).locator('.mail').first();
     for (const s of ['Gmail · 자동', '자료 요청', '기록 시험자']) await hasText(acts, s);
   });
   await run.step('C2-09', async () => {
@@ -1151,7 +1227,7 @@ export async function case3(run){
     pid = await setupProject(page, { company:CO, cycle:'2026-T3', notice:'main', rep:{ name:REP, title:'대표' },
       extraContacts:[{ name:DIR, title:'이사', phone:'010-0000-3333', email:MAIL, assign:true }] });
     await H.openProject(page, CO);
-    await hasText(page.locator('.drawer .contacts'), DIR + ' 이사');
+    await hasText(page.locator(PD + ' .contacts'), DIR + ' 이사');
   });
   await run.step('C3-02', async () => {
     const m = await openSend(page, CO, 1);
@@ -1188,7 +1264,7 @@ export async function case3(run){
     await H.addAsset(page, CO, '하이테크 양말편직기', { qty:2 });
     await H.addAsset(page, CO, 'YARNCHAIN GRID', { qty:1 });
     await H.openProject(page, CO);
-    await hasText(page.locator('.drawer .rrow', { hasText:'양말편직기' }), '검토 중 · 2대');
+    await hasText(page.locator(PD + ' .rrow', { hasText:'양말편직기' }), '검토 중 · 2대');
   });
   await run.step('C3-08', async () => {
     await H.setPlanned(page, CO, 6, Td(30));
@@ -1258,7 +1334,7 @@ export async function case4(run, { mobilePage }){
   await run.step('C4-01', async () => {
     pid = await setupProject(page, { company:CO, cycle:'2026-T4', notice:'', rep:{ name:REP, title:'대표' } });
     await H.openProject(page, CO);
-    await hasText(page.locator('.drawer'), '매출 요건이 정반대');
+    await hasText(page.locator(PD), '매출 요건이 정반대');
     await H.closeDrawer(page); await tab(page, 'board');
     await hasText(card(page, CO), '공고 미확인');
   });
@@ -1289,7 +1365,7 @@ export async function case4(run, { mobilePage }){
     await mp.waitForTimeout(500);
     if (!(await mp.locator('#tabMore').isVisible())) fail('더보기 버튼 안 보임');
     if (await mp.locator('#tabOrg').isVisible()) fail('기관·담당자 탭이 하단바에 보임');
-    for (const t of ['#tabBoard', '#tabTodo', '#tabProj', '#tabReport']) if (!(await mp.locator(t).isVisible())) fail('하단바에 없음: ' + t);
+    for (const t of ['#tabTodo', '#tabProj', '#tabReport']) if (!(await mp.locator(t).isVisible())) fail('하단바에 없음: ' + t);
     const pos = await mp.locator('nav.tabs').evaluate(n => getComputedStyle(n).position);
     if (pos !== 'fixed') fail('탭바 position ' + pos);
     const over = await mp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -1519,7 +1595,7 @@ export async function case6(run){
   });
   await run.step('C6-09', async () => {
     await H.openProject(page, CO);
-    const head = page.locator('.drawer .dr-head');
+    const head = page.locator(PD + ' .dr-head');
     await head.getByRole('button', { name:'삭제', exact:true }).click();
     await until(() => head.getByRole('button', { name:'삭제 확인' }).count(), '«삭제 확인»으로 안 바뀜');
     await page.waitForTimeout(4400);

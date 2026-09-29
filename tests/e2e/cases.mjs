@@ -743,6 +743,56 @@ export async function case2(run){
       await hasText(page.locator('#assist .abub.sys').last(), '견적서는 위 표에서');
     } finally { await closeAssist(); }
   });
+  await run.step('C2-34', async () => {
+    // 방문 메모 → 1차 진단표 항목 제안 → 카드(메모에 없음·기존 값·메모에 없는 숫자는 해제) → «선택한 4칸을 진단표에 넣기» → «단계 메모로도 저장»
+    try {
+      const id = await H.openStep(page, CO, 1);
+      const ta8 = page.locator(`#dg-${id}-1-8`); await ta8.fill('[테스트] 기존 담당 인력'); await ta8.blur();
+      await until(async () => (await stepOf(1)).diag?.['⑧ 담당 가능 인력'] === '[테스트] 기존 담당 인력', '⑧ 기존 값 저장 안 됨');
+      await H.closeDrawer(page);
+      const st0 = await stepOf(1);
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const before = await page.evaluate(() => window.__mock.samples.length);
+      const n0 = await page.locator('#assist .dgbox').count();
+      await page.locator('#as-input').fill(CO + ' 1차 방문 메모: 대표가 "불량이 하루 30개쯤 나와요"라고 함. 기록은 종이 일지. 검사는 육안. 다음 주 게이지 도입 검토 예정.');
+      await page.locator('#as-input').press('Enter');
+      try { await until(async () => (await page.locator('#assist .dgbox').count()) > n0, '진단표 카드가 안 뜸', 15000); }
+      catch (e){ fail('진단표 카드가 안 뜸 / 마지막 말풍선: ' + (await page.locator('#assist .abub').last().innerText().catch(() => '?')).slice(0, 200)); }
+      const c = await page.evaluate(i => window.__mock.samples[i], before);
+      for (const t of ['현장진단표 나누기 규칙', '[현장진단표 항목]', '1차 | ⑤ 원인추적가능성 |', '(대표자 추정)', '원문 그대로', 'LEVEL을 쓰지 않습니다', '[현재 진단표 제안] 없음'])
+        if (!c.prompt.includes(t)) fail('규칙 턴에 없음: ' + t);
+      const box = page.locator('#assist .dgbox').last();
+      await hasText(box, '1차 현장진단표 (1단계)');
+      if ((await box.locator('.qitem').count()) !== 9) fail('1차 항목 카드가 9장이 아님');
+      await hasText(box.locator('.qitem', { hasText:'① 전체 공정' }), '메모에 없음');
+      await hasText(box.locator('.qitem', { hasText:'⑦ 안전·환경위험' }), '메모에 없음');   // «미확인» 값은 빈칸 취급
+      await hasText(box, '맞지 않아 뺀 것: ⑨ 없는 항목');
+      const item = t => box.locator('.qitem', { hasText:t });
+      const on = async t => item(t).locator('input[type=checkbox]').isChecked();
+      await hasText(item('⑧ 담당 가능 인력'), '기존: [테스트] 기존 담당 인력');
+      if (await on('⑧ 담당 가능 인력')) fail('기존 값 있는 칸이 선택됨');
+      await hasText(item('⑤ 원인추적가능성'), '메모에 없는 숫자: 5');
+      if (await on('⑤ 원인추적가능성')) fail('메모에 없는 숫자 칸이 선택됨');
+      for (const t of ['현상청취', '③ 현재 기록 방식', '④ KPI 변수', '⑥ 검사방식']) if (!(await on(t))) fail('선택 안 됨: ' + t);
+      await box.getByRole('button', { name:'선택한 4칸을 진단표에 넣기' }).click();
+      await hasText(page.locator('#assist .abub.sys').last(), '4칸을 넣었습니다');
+      await until(async () => (await stepOf(1)).diag?.['⑥ 검사방식'] === '육안 검사', '진단표에 안 들어감');
+      const st = await stepOf(1);
+      const want = { '현상청취 (대표자의 말)':'"불량이 하루 30개쯤 나와요"', '③ 현재 기록 방식 수준':'종이 일지', '④ KPI 변수에 따른 기초 데이터 유형':'용접 불량 하루 30개 (대표자 추정)', '⑧ 담당 가능 인력':'[테스트] 기존 담당 인력' };
+      for (const [k, v] of Object.entries(want)) if (st.diag[k] !== v) fail('진단값 ' + k + ': ' + st.diag[k]);
+      if (st.diag['⑤ 원인추적가능성'] || st.diag['⑨ 없는 항목'] !== undefined) fail('걸러야 할 값이 저장됨');
+      if (st.status !== st0.status || JSON.stringify(st.docs || {}) !== JSON.stringify(st0.docs || {})) fail('단계 상태·산출물 체크가 바뀜');
+      if (!(await box.getByRole('button', { name:'넣음 (4칸)' }).isDisabled())) fail('넣은 뒤 버튼이 다시 눌림');
+      await box.getByRole('button', { name:'단계 메모로도 저장' }).click();
+      await until(async () => ((await stepOf(1)).notes || []).some(x => x.text.startsWith('(방문 메모)') && x.text.includes('종이 일지')), '방문 메모가 단계 메모로 안 남음');
+      await page.locator('#assist').getByRole('button', { name:'닫기' }).click();
+      await H.openStep(page, CO, 1);
+      if ((await page.locator(`#dg-${id}-1-6`).inputValue()) !== '육안 검사') fail('상세 진단 칸에 값이 안 보임');
+      await hasText(stepBody(page, 1).locator('.diag .subhead'), '5/9');
+      await H.closeDrawer(page);
+    } finally { await closeAssist(); }
+  });
   await run.step('C2-32', async () => {
     // 화면 구성: 위 탭 7개(묶음) + 보기 전환 칩 · 기관별 보기에서 담당자 펼침·검색 강조 · 통합 검색으로 담당자 상세
     await H.closeDrawer(page);

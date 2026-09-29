@@ -88,8 +88,37 @@ header{
 }
 
 /* ---------- board ---------- */
-main{flex:1 1 auto;overflow:auto;padding:14px 16px 18px;-webkit-overflow-scrolling:touch}
-.board{display:flex;gap:12px;align-items:flex-start;min-height:100%;width:max-content;padding-bottom:4px}
+.shell{flex:1 1 auto;min-height:0;display:flex}   /* 본문 | 도우미(열면 오른쪽 칸, 본문이 줄어듦) */
+main{flex:1 1 auto;min-width:0;overflow:auto;padding:14px 16px 18px;-webkit-overflow-scrolling:touch}
+.kbwrap{display:flex;flex-direction:column;gap:10px;min-height:100%}
+.board{display:flex;gap:12px;align-items:flex-start;flex:1 1 auto;width:max-content;padding-bottom:4px}
+/* 과제 탭 «목록» = 3칸 작업 화면: 목록 280px | 상세 | (도우미) */
+main.wkmode{overflow:hidden;padding:0}
+.wk{height:100%;display:flex;flex-direction:column}
+.wkbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 16px}
+.wkbar .subnav{margin-bottom:0}
+.wkcols{flex:1 1 auto;min-height:0;display:flex;border-top:1px solid var(--line)}
+.wklist{flex:0 0 280px;width:280px;overflow-y:auto;border-right:1px solid var(--line);background:var(--surface-2);padding:10px 10px 18px;display:flex;flex-direction:column;gap:6px}
+.wklist .wkhead{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)}
+.wklist .wkhead b{font-size:13px;color:var(--ink)}
+.wklist .chips .chip{padding:2px 8px;font-size:11.5px}
+.wkrow{display:flex;flex-direction:column;gap:4px;width:100%;text-align:left;border:1px solid var(--line-soft);border-left:3px solid var(--rc);border-radius:8px;background:var(--surface);padding:7px 9px}
+.wkrow:hover{border-color:color-mix(in oklab,var(--rc) 40%,var(--line));border-left-color:var(--rc)}
+.wkrow.on{background:color-mix(in oklab,var(--accent) 9%,var(--surface));border-color:var(--accent);border-left-color:var(--rc);box-shadow:0 0 0 1px var(--accent)}
+.wkrow .wkco{display:flex;align-items:baseline;gap:6px;min-width:0}
+.wkrow .wkco b{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wkrow .wkco span{font-size:11px;color:var(--ink-2);flex:0 0 auto}
+.wkrow .wkmeta{display:flex;align-items:center;gap:4px 6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)}
+.wkrow .vpill{font-size:10.5px;padding:1px 7px}
+.wkempty{color:var(--ink-3);font-size:12.5px;text-align:center;padding:40px 16px}
+.wkdet{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;background:var(--surface)}
+.wkfold,.wkback{display:none}
+.wkdet .dr-head .btn{white-space:nowrap;flex:0 0 auto}
+@media (max-width:1100px){
+  .wk:not(.lstopen):not(.nosel) .wklist{display:none}
+  .wkfold{display:inline-flex}
+  .wk.nosel .wkfold{display:none}
+}
 .col{
   flex:0 0 268px; width:268px; background:var(--surface);
   border:1px solid var(--line); border-radius:11px; box-shadow:var(--shadow);
@@ -231,7 +260,9 @@ main{flex:1 1 auto;overflow:auto;padding:14px 16px 18px;-webkit-overflow-scrolli
 .rcard tr.absub.hit td{background:color-mix(in oklab,var(--accent) 10%,var(--surface));color:var(--ink)}
 /* 보드 도우미 */
 #assistBtn.on{border-color:var(--accent);color:var(--accent)}
-.assist{position:fixed;top:0;right:0;bottom:0;width:min(400px,100%);z-index:42;background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.assist{flex:0 0 400px;width:400px;min-height:0;background:var(--surface);border-left:1px solid var(--line);display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}
+/* 도우미가 열려 있으면 떠 있는 상세(기관·담당자·장비·자산)는 그 왼쪽에 — 서로 가리지 않게 */
+@media (min-width:641px){ body.asst-on .drawer, body.asst-on .scrim.dscrim{right:400px} }
 .ahead{display:flex;align-items:center;gap:6px;padding:12px 14px;border-bottom:1px solid var(--line)}
 .ahead b{font-size:15px}
 .alog{flex:1 1 auto;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
@@ -284,7 +315,7 @@ main{flex:1 1 auto;overflow:auto;padding:14px 16px 18px;-webkit-overflow-scrolli
 .athumbs{display:flex;gap:5px;flex-wrap:wrap}
 .athumb{display:inline-flex;align-items:center;gap:2px;font-size:11.5px;border:1px dashed var(--line);border-radius:6px;padding:1px 2px 1px 7px;background:var(--surface-2)}
 .athumb .btn{padding:0 5px}
-@media (max-width:640px){ .assist{width:100%;border-left:0} .afoot textarea{font-size:16px} }
+@media (max-width:640px){ .assist{position:fixed;top:0;right:0;bottom:0;width:100%;z-index:42;border-left:0;padding-top:env(safe-area-inset-top,0px)} .afoot textarea{font-size:16px} }
 @media (max-width:640px){ .pup input,.pup select,.pcomment{font-size:16px} }
 .rcard tr.sumrow td{font-weight:600;border-top:1px solid var(--line)}
 .budcard td .badge{white-space:nowrap;display:inline-block;margin:1px 0}
@@ -500,8 +531,8 @@ button.gcal{cursor:pointer;font-family:inherit}
   .crow .rl{grid-row:auto;grid-column:1/-1}
   .modal.wide{width:calc(100% - 20px)}
   .sf textarea{min-height:160px}
-  /* 하단 탭바: 주요 4개 + 더보기(기관·담당자·활동·보고서) */
-  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:repeat(5,1fr);gap:2px;
+  /* 하단 탭바: 할 일·과제·보고서 + 더보기(기관·담당자·장비·자산·관리) */
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:repeat(4,1fr);gap:2px;
     border-radius:0;border-width:1px 0 0;background:var(--surface);box-shadow:0 -2px 12px rgba(19,25,35,.08);
     padding:4px 6px calc(4px + env(safe-area-inset-bottom,0px))}
   .tab{padding:10px 2px;font-size:12.5px;text-align:center}
@@ -512,6 +543,15 @@ button.gcal{cursor:pointer;font-family:inherit}
   .moremenu button{border:0;background:none;text-align:left;padding:11px 14px;font-size:14px;font-weight:600;color:var(--ink-2);border-radius:7px}
   .moremenu button.on{color:var(--accent);background:var(--surface-2)}
   main{padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+  /* 과제 작업 화면: 한 화면씩 — 목록 → 상세(«← 목록») → 도우미(전체 화면) */
+  main.wkmode{padding:0 0 calc(58px + env(safe-area-inset-bottom,0px))}
+  .wkbar{padding:8px 12px}
+  .wkcols{border-top:0}
+  .wklist{flex:1 1 auto;width:100%;border-right:0}
+  .wk:not(.nosel) .wklist{display:none}
+  .wk.nosel .wkdet{display:none}
+  .wkback{display:inline-flex}
+  .wkfold{display:none!important}
   .legend{display:none}
   .qwrap{flex:1 1 100%}
   .qwrap .ctl{width:100%!important;font-size:16px}
@@ -526,9 +566,8 @@ button.gcal{cursor:pointer;font-family:inherit}
       <span>8-Step Coordination Board</span>
     </div>
     <nav class="tabs" role="tablist">
-      <button class="tab on" id="tabBoard" role="tab" aria-selected="true">보드</button>
-      <button class="tab" id="tabTodo" role="tab" aria-selected="false" title="지금·앞으로 할 일: 기한 경과·이번 주 예정·도입 마감·사업계획서 점검·서류·회신 + 구글 캘린더 달력">할 일</button>
-      <button class="tab" id="tabProj" role="tab" aria-selected="false" title="Project — 업체 × 연도·차수">과제</button>
+      <button class="tab on" id="tabTodo" role="tab" aria-selected="true" title="지금·앞으로 할 일: 기한 경과·이번 주 예정·도입 마감·사업계획서 점검·서류·회신 + 구글 캘린더 달력">할 일</button>
+      <button class="tab" id="tabProj" role="tab" aria-selected="false" title="Project — 업체 × 연도·차수. 목록 | 상세 | 도우미 작업 화면 · 칸반 · 표">과제</button>
       <button class="tab more" id="tabOrg" role="tab" aria-selected="false" title="Account·Contact — 기관(소공인·코디 소속·공급기업·컨설팅사)과 소속 담당자">기관·담당자</button>
       <button class="tab more" id="tabEq" role="tab" aria-selected="false" title="Product·Asset — 장비 카탈로그와 과제에 들여온 자산">장비·자산</button>
       <button class="tab" id="tabReport" role="tab" aria-selected="false" title="방문 실적·기업별 진행·사업비 현황·연락 이력">보고서</button>
@@ -557,9 +596,17 @@ button.gcal{cursor:pointer;font-family:inherit}
   <div class="notice" id="notice" hidden></div>
 </header>
 
+<div class="shell" id="shell">
 <main>
-  <div class="board" id="board"></div>
-  <div class="report" id="today" hidden></div>
+  <div class="wk" id="work" hidden>
+    <div class="wkbar" id="wkbar"></div>
+    <div class="wkcols">
+      <section class="wklist" id="wklist" aria-label="과제 목록"></section>
+      <section class="wkdet" id="wkdet" aria-label="과제 상세"></section>
+    </div>
+  </div>
+  <div class="kbwrap" id="board" hidden></div>
+  <div class="report" id="today"></div>
   <div class="report" id="sched" hidden></div>
   <div class="report" id="act" hidden></div>
   <div class="report" id="proj" hidden></div>
@@ -570,6 +617,7 @@ button.gcal{cursor:pointer;font-family:inherit}
   <div class="report" id="report" hidden></div>
   <div class="report" id="admin" hidden></div>
 </main>
+</div>
 
 <script>
 /* ======================= 업무 정의 =======================
@@ -675,8 +723,9 @@ function thisYear(){ const y = new Date().getFullYear(); return [y+'-01-01', y+'
 const [Y_FROM, Y_TO] = thisYear();
 
 const state = {
-  projects:new Map(), openId:null, openSteps:new Set(),
-  tab:'board', q:'', coord:'', year:'', hideDone:false,
+  projects:new Map(), openId:rememberedSel(), openSteps:new Set(),   // openId = 과제 탭 3칸 화면에서 고른 과제(localStorage에 기억)
+  tab:'today', q:'', coord:'', year:'', hideDone:false,   // 첫 화면 = 할 일
+  wkStep:'', wkList:false,   // 과제 탭 «목록»: 단계 필터('' | '1'~'8' | '9' 완료), 좁은 화면에서 목록 펼침
   from:Y_FROM, to:Y_TO, schedDone:false, actCh:'', notice:'',
   accounts:new Map(), people:new Map(), abType:'', abQ:'',
   programs:new Map(),   // 연도별 사업 규칙(programs 컬렉션)
@@ -1398,7 +1447,7 @@ async function removeProject(id){
   const files = p.files || [];
   const calCount = new Set(activitiesOf(p).filter(a => a.channel === 'calendar' && a.eventId).map(a => a.eventId)).size;
   state.projects.delete(id);
-  if (state.openId === id) state.openId = null;
+  if (state.openId === id){ state.openId = null; rememberSel(null); }
   render();
   if (!db || !writable) return;
   try { await queueWrite('projects/' + id, () => db.doc('projects/' + id).delete()); } catch (e) {}
@@ -1484,15 +1533,17 @@ function renderQres(){
 /* ======================= 하단 탭바 더보기 (I) ======================= */
 /* 위 탭 = 화면 묶음. 내부 화면 key(state.tab)와 컨테이너는 그대로 두고, 여러 화면이 있는 묶음은 보기 전환 칩(subnavTo)으로 바꾼다.
    할 일 = 목록(today) | 달력(sched) · 기관·담당자 = 기관별(acc) | 담당자 전체(con) · 장비·자산 = 장비(prod) | 자산(asset)
-   보고서 = 실적·진행·사업비(report) | 연락 이력(act) — 2026-09-29 사용자 결정(11개 탭 → 7개) */
-const TAB_GROUPS = [['tabBoard',['board']], ['tabTodo',['today','sched']], ['tabProj',['proj']], ['tabOrg',['acc','con']], ['tabEq',['prod','asset']], ['tabReport',['report','act']], ['tabAdmin',['admin']]];
-const SUB_LABELS = { today:'목록', sched:'달력', acc:'기관별', con:'담당자 전체', prod:'장비', asset:'자산', report:'실적·진행·사업비', act:'연락 이력' };
+   보고서 = 실적·진행·사업비(report) | 연락 이력(act) — 2026-09-29 사용자 결정(11개 탭 → 7개)
+   과제 = 목록(work — 목록 | 상세 | 도우미 3칸) | 칸반(board) | 표(proj). «보드» 탭은 없앴고 첫 화면은 할 일(Q-20260929-12) */
+const TAB_GROUPS = [['tabTodo',['today','sched']], ['tabProj',['work','board','proj']], ['tabOrg',['acc','con']], ['tabEq',['prod','asset']], ['tabReport',['report','act']], ['tabAdmin',['admin']]];
+const SUB_LABELS = { today:'목록', sched:'달력', work:'목록', board:'칸반', proj:'표', acc:'기관별', con:'담당자 전체', prod:'장비', asset:'자산', report:'실적·진행·사업비', act:'연락 이력' };
 const MORE_GROUPS = ['tabOrg','tabEq','tabAdmin'];   // 휴대폰 하단 탭바 «더보기»로 가는 묶음
 const groupOf = key => TAB_GROUPS.find(([, ks]) => ks.includes(key));
 const lastSub = {};   // 묶음 버튼 → 마지막으로 본 화면
 function goTab(btnId){
   const g = TAB_GROUPS.find(([b]) => b === btnId);
   state.tab = lastSub[btnId] || g[1][0];
+  state.back = [];
   toggleMore(false); render();
 }
 /** 여러 화면이 있는 묶음의 보기 전환 칩. 각 render 함수가 컨테이너를 비운 직후 부른다 */
@@ -1632,6 +1683,7 @@ function statusRows(){
 
 /* ======================= 렌더 ======================= */
 const boardEl = document.getElementById('board');
+const workEl = document.getElementById('work');
 const reportEl = document.getElementById('report');
 const adminEl = document.getElementById('admin');
 const schedEl = document.getElementById('sched');
@@ -1663,7 +1715,9 @@ function render(){
   mb.classList.toggle('on', !!moreOn);
   mb.textContent = moreOn ? document.getElementById(moreOn).textContent + ' ▴' : '더보기';
   document.getElementById('legend').hidden = tab !== 'board';
-  document.getElementById('newBtn').hidden = tab !== 'board';
+  document.getElementById('newBtn').hidden = g?.[0] !== 'tabProj';
+  document.querySelector('main').classList.toggle('wkmode', tab === 'work');
+  workEl.hidden   = tab !== 'work';
   boardEl.hidden  = tab !== 'board';
   todayEl.hidden  = tab !== 'today';
   schedEl.hidden  = tab !== 'sched';
@@ -1685,7 +1739,8 @@ function render(){
 }
 
 function paint(){
-  if (state.tab === 'board') renderBoard();
+  if (state.tab === 'work') renderWork();
+  else if (state.tab === 'board') renderBoard();
   else if (state.tab === 'sched') renderSched();
   else if (state.tab === 'today') renderToday();
   else if (state.tab === 'act') renderActivity();
@@ -1749,6 +1804,9 @@ function renderBoard(){
     byCol.get(c).push([id,p]);
   }
   boardEl.replaceChildren();
+  subnavTo(boardEl, 'board');
+  const bd = el('div','board');
+  boardEl.append(bd);
 
   for (let i = 1; i <= DONE_COL; i++){
     const isDone = i === DONE_COL;
@@ -1781,7 +1839,7 @@ function renderBoard(){
       if (!p || p.currentStep === i) return;
       moveTo(id, i);
     });
-    boardEl.append(col);
+    bd.append(col);
   }
 }
 
@@ -1825,7 +1883,7 @@ function cardEl(id, p, step){
   foot.append(el('span','pct mono', d + '/8'));
   c.append(foot);
 
-  c.addEventListener('click', () => { state.openId = id; state.openSteps = new Set([String(Math.min(p.currentStep||1,8))]); render(); });
+  c.addEventListener('click', () => openStep(id, Math.min(p.currentStep || 1, 8)));
   c.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', id); e.dataTransfer.effectAllowed = 'move'; c.classList.add('dragging'); });
   c.addEventListener('dragend', () => c.classList.remove('dragging'));
   return c;
@@ -2347,7 +2405,7 @@ function replyLabel(a){
 /* ======================= 오늘 =======================
    흩어진 할 일을 한 화면에: 기한 경과 · 7일 내 방문 · 캘린더 미등록 · 서명·서류 미수집 · 회신 대기.
    상단 검색·연도·공고·코디 필터가 적용된다. 행을 누르면 그 단계가 펼쳐진 과제 상세가 열린다. */
-function openStep(id, n){ state.rec = null; state.openId = id; state.openSteps = new Set([String(n)]); render(); }
+function openStep(id, n){ state.back = []; openProject(id, n); render(); }
 const stepPill = s => { const c = document.createElement('td'); const pl = el('span','vpill', s.n + '. ' + s.name); pl.style.setProperty('--rc', rv(s.owner)); c.append(pl); return c; };
 const coCell = p => { const c = td(p.company + ' ', 'co'); c.append(el('span','n mono', p.cycle)); return c; };
 const ddCell = (dd, cls) => { const c = document.createElement('td'); c.append(el('span','dday ' + cls, ddayLabel(dd))); return c; };
@@ -2557,11 +2615,7 @@ function renderActivity(){
   for (const r of rows){
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
-    tr.addEventListener('click', () => {
-      state.openId = r.id;
-      state.openSteps = new Set([String(r.a.step || Math.min(r.p.currentStep || 1, 8))]);
-      render();
-    });
+    tr.addEventListener('click', () => openStep(r.id, r.a.step || Math.min(r.p.currentStep || 1, 8)));
     tr.append(td(fmtTs(r.a.ts),'num'), td(r.a.by ? who(r.a.by) : '—'), td(r.p.company,'co'), td(r.p.cycle,'num'));
     const sc = document.createElement('td');
     const st = STEPS[(r.a.step || 0) - 1];
@@ -3080,28 +3134,42 @@ function openContactForm(cid, preset, done){
 
 /* ======================= 오브젝트 목록 · 상세 =======================
    Project(과제 = 업체 × 연도·차수) / Account(기관) / Contact(담당자).
-   목록 탭에서 행을 누르면 상세 패널이 열리고, 상세끼리는 go()로 오간다.
-   상세 패널은 한 번에 하나: 과제 = state.openId, 기관·담당자 = state.rec.   */
+   과제 상세는 «과제» 탭 «목록» 보기(3칸: 목록 | 상세 | 도우미)의 가운데 칸에만 그린다(state.openId, Q-20260929-12).
+   과제를 여는 모든 경로는 openProject/openStep/go('project')로 과제 탭으로 옮겨 그 과제를 고른다.
+   기관·담당자·장비·자산 상세(state.rec)는 떠 있는 패널 하나. 상세끼리는 go()로 오가고 «← 뒤로»(state.back)로 돌아간다. */
 
-const curRec = () => state.rec ? state.rec : state.openId ? { t:'project', id:state.openId } : null;
+/* 고른 과제 기억(편의 설정 — 막혀 있으면 조용히 넘어간다) */
+function rememberedSel(){ try { return localStorage.getItem('smartcodi.selProject') || null; } catch (e) { return null; } }
+function rememberSel(id){ try { if (id) localStorage.setItem('smartcodi.selProject', id); else localStorage.removeItem('smartcodi.selProject'); } catch (e) {} }
+/** 과제 탭 «목록»으로 옮겨 그 과제를 고르고 단계 n(없으면 현재 단계)을 펼친다. render는 부르는 쪽이 */
+function openProject(id, n){
+  if (state.openId !== id) drawerScroll = 0;
+  state.rec = null; state.tab = 'work'; state.openId = id;
+  state.openSteps = new Set([String(n || Math.min(state.projects.get(id)?.currentStep || 1, 8))]);
+  rememberSel(id);
+  toggleMore(false);
+}
+/** 화면에 열려 있는 과제(과제 탭 «목록»에서 고른 것) — 도우미의 «지금 열린 과제» */
+const shownPid = () => state.tab === 'work' && state.openId && state.projects.has(state.openId) ? state.openId : '';
+const curRec = () => state.rec ? state.rec : shownPid() ? { t:'project', id:state.openId } : null;
 function go(t, id, push = true){
   const cur = curRec();
-  if (push && cur && !(cur.t === t && cur.id === id)) state.back.push(cur);
-  if (t === 'project'){
-    state.rec = null; state.openId = id;
-    state.openSteps = new Set([String(Math.min(state.projects.get(id)?.currentStep || 1, 8))]);
-  } else {
-    state.openId = null; state.rec = { t, id };
-  }
-  drawerScroll = 0;
+  if (push && cur && !(cur.t === t && cur.id === id)) state.back.push({ ...cur, tab:state.tab });
+  if (t === 'project') openProject(id);
+  else { state.rec = { t, id }; recScroll = 0; }
   render();
 }
-function goBack(){ const prev = state.back.pop(); if (prev) go(prev.t, prev.id, false); }
-function closeRec(){ state.openId = null; state.rec = null; state.back = []; render(); }
+function goBack(){
+  const prev = state.back.pop();
+  if (!prev) return;
+  if (prev.t !== 'project' && prev.tab) state.tab = prev.tab;   // 기관 상세 → 과제 → «뒤로»면 그 기관을 보던 탭으로
+  go(prev.t, prev.id, false);
+}
+function closeRec(){ state.rec = null; state.back = []; render(); }
 
 /** 상세 패널 틀: 뒤로 · 제목 · 부제 · 버튼들 · 닫기. body를 돌려준다. */
 function drawerFrame(label, title, sub, btns){
-  const scrim = el('div','scrim');
+  const scrim = el('div','scrim dscrim');
   scrim.addEventListener('click', closeRec);
   const dr = el('aside','drawer');
   dr.setAttribute('role','dialog'); dr.setAttribute('aria-label', label);
@@ -3124,7 +3192,28 @@ function drawerFrame(label, title, sub, btns){
   const body = el('div','dr-body');
   dr.append(body);
   document.body.append(scrim, dr);
-  drawerHost = { remove(){ scrim.remove(); dr.remove(); } };
+  drawerHost = { body, remove(){ scrim.remove(); dr.remove(); } };
+  return body;
+}
+/** 과제 상세 틀(과제 탭 가운데 칸): ← 목록(휴대폰만) · ← 뒤로 · 제목 · 부제 · 버튼들. body를 돌려준다 */
+function paneFrame(title, sub, btns){
+  const head = el('div','dr-head');
+  const bl = el('button','btn ghost wkback','← 목록');
+  bl.addEventListener('click', () => { state.openId = null; state.back = []; rememberSel(null); render(); });
+  head.append(bl);
+  if (state.back.length){
+    const b = el('button','btn ghost','← 뒤로');
+    b.addEventListener('click', goBack);
+    head.append(b);
+  }
+  const ttl = el('div', null); ttl.style.flex = '1 1 auto'; ttl.style.minWidth = '0';
+  ttl.append(el('h2', null, title));
+  const sb = el('div','sub');
+  for (const x of [].concat(sub)) sb.append(typeof x === 'string' ? document.createTextNode(x) : x);
+  ttl.append(sb);
+  head.append(ttl, ...btns);
+  const body = el('div','dr-body');
+  detEl.append(head, body);
   return body;
 }
 const linkBtn = (text, fn) => { const b = el('button','linkbtn', text); b.addEventListener('click', fn); return b; };
@@ -3407,7 +3496,7 @@ const DRAFT_FORMS = () => FORMS.filter(f => !f.ref);   // 도우미가 쓸 수 �
 function assistRules(){
   const orgs = [...state.accounts.values()].slice(0, 150).map(a => '- ' + a.name + ' (' + (ROLES[a.type]?.label || a.type) + ')');
   const projs = [...state.projects.entries()].slice(0, 100).map(([id, p]) => '- ' + id + ' | ' + p.company + ' | ' + p.cycle + ' | ' + curStepName(p));
-  const open = state.openId && state.projects.get(state.openId);
+  const open = shownPid() && state.projects.get(state.openId);
   return [
     '[도우미] 당신은 «소공인 스마트제조 코디 보드»의 도우미입니다. 할 수 있는 일은 일곱 가지입니다.',
     '  (1) 명함(사진·텍스트)을 읽어 기관·담당자 등록 창을 채워 주기',
@@ -3551,7 +3640,7 @@ async function assistSend(){
     }
     if (r?.quote && typeof r.quote === 'object'){
       assist.quote = normQuote(r.quote);
-      const pid = state.projects.has(r.projectId) ? r.projectId : state.openId && state.projects.has(state.openId) ? state.openId : '';
+      const pid = state.projects.has(r.projectId) ? r.projectId : shownPid();
       qrev = quoteReview(assist.quote, 'aq-' + (++assist.n), pid);
       assist.lastKind = 'quote';
     }
@@ -3559,7 +3648,7 @@ async function assistSend(){
     let drev = null, dnote = '';
     if (r?.diag && typeof r.diag === 'object'){
       const d = normDiag(r.diag);
-      const pid = state.projects.has(d.projectId) ? d.projectId : state.openId && state.projects.has(state.openId) ? state.openId : '';
+      const pid = state.projects.has(d.projectId) ? d.projectId : shownPid();
       if (!pid) dnote = '어느 과제의 방문 메모인지 모르겠습니다. 업체명을 말해 주거나 과제 상세를 연 채로 다시 보내 주세요.';
       else if (!d.round) dnote = '몇 차 방문(1~4차)의 메모인지 알려 주세요.';
       else {
@@ -3572,7 +3661,7 @@ async function assistSend(){
     // 과제 현황: Claude가 고른 과제(말하지 않았으면 열린 과제)의 카드를 보드가 만든다. 모르는 id면 되묻는다
     let srev = null, snote = '';
     if (r?.action === 'status'){
-      const pid = state.projects.has(r.projectId) ? r.projectId : !r.projectId && state.openId && state.projects.has(state.openId) ? state.openId : '';
+      const pid = state.projects.has(r.projectId) ? r.projectId : !r.projectId ? shownPid() : '';
       if (pid) srev = statusCard(pid);
       else snote = '어느 과제인지 모르겠습니다. 업체명과 차수를 말해 주거나 과제 상세를 연 채로 다시 물어 주세요.';
     }
@@ -3580,7 +3669,7 @@ async function assistSend(){
     let prev = null, pnote = '';
     if (r?.progress && typeof r.progress === 'object'){
       const g = normProgress(r.progress);
-      const pid = state.projects.has(g.projectId) ? g.projectId : !g.projectId && state.openId && state.projects.has(state.openId) ? state.openId : '';
+      const pid = state.projects.has(g.projectId) ? g.projectId : !g.projectId ? shownPid() : '';
       if (!pid) pnote = '어느 과제의 방문 결과인지 모르겠습니다. 업체명과 차수를 말해 주거나 과제 상세를 연 채로 다시 보내 주세요.';
       else if (!g.step) pnote = '몇 단계(몇 차 방문)의 결과인지 알려 주세요.';
       else {
@@ -3594,7 +3683,7 @@ async function assistSend(){
     let crev = null, cnote = '';
     if (r?.schedule && typeof r.schedule === 'object'){
       const g = normSchedule(r.schedule);
-      const pid = state.projects.has(g.projectId) ? g.projectId : !g.projectId && state.openId && state.projects.has(state.openId) ? state.openId : '';
+      const pid = state.projects.has(g.projectId) ? g.projectId : !g.projectId ? shownPid() : '';
       if (!pid) cnote = '어느 과제의 일정인지 모르겠습니다. 업체명과 차수를 말해 주거나 과제 상세를 연 채로 다시 보내 주세요.';
       else if (!g.step) cnote = '어느 단계(몇 차 방문·납품 등)의 일정인지 알려 주세요.';
       else if (!g.date) cnote = (g.dateRaw ? '«' + g.dateRaw + '»은 날짜로 읽지 못했습니다. ' : '날짜를 알 수 없어 예정일을 제안하지 않았습니다. ') + '«10월 15일»·«다음 주 수요일»처럼 날짜를 알려 주세요.';
@@ -3621,7 +3710,7 @@ async function assistSend(){
       }
     }
     if (r?.action === 'draft'){
-      const pid = state.projects.has(r.projectId) ? r.projectId : state.openId && state.projects.has(state.openId) ? state.openId : '';
+      const pid = state.projects.has(r.projectId) ? r.projectId : shownPid();
       const form = DRAFT_FORMS().find(f => f.id === r.formId);
       if (!pid) assistBubble('sys', '어느 과제인지 모르겠습니다. 업체명을 말해 주거나 과제 상세를 연 채로 다시 요청하세요.');
       else if (!form) assistBubble('sys', '어떤 양식인지 모르겠습니다: 수행일지 1~4차, 사업계획서, 결과보고서 중에서 말해 주세요.');
@@ -3980,7 +4069,7 @@ function diagReview(d, pid, memo, idp){
   return box;
 }
 /* ---------- 도우미 과제 현황: Claude는 과제만 고른다(action "status") → 카드 내용은 보드가 과제 데이터로 만든다(할 일 탭과 같은 계산) ----------
-   읽기 전용. «과제 열기»는 도우미를 닫고 그 단계가 펼쳐진 과제 상세를 연다(좁은 화면·넓은 화면 모두 도우미가 상세를 가린다). */
+   읽기 전용. «과제 열기»는 과제 탭 «목록»에서 그 단계가 펼쳐진 과제 상세를 연다(넓은 화면은 도우미가 오른쪽 칸에 그대로, 휴대폰은 도우미를 닫는다 — assistYield). */
 function statusCard(pid){
   const p = state.projects.get(pid), t = today(), cur = Math.min(p.currentStep || 1, DONE_COL);
   const box = el('div','cardbox svbox');
@@ -4024,7 +4113,7 @@ function statusCard(pid){
   if (empty.length) box.append(el('div','rnote', '해당 없음: ' + empty.join(' · ')));
   box.append(el('div','rnote', '보드에 입력된 값으로 만든 현황입니다(' + fmtTs(new Date().toISOString()) + ' 기준). 체크·상태 변경은 과제 상세에서 직접 하세요.'));
   const bar = el('div','sendbar'), go = el('button','btn primary','과제 열기');
-  go.addEventListener('click', () => { assistToggle(false); openStep(pid, Math.min(cur, 8)); });
+  go.addEventListener('click', () => { assistYield(); openStep(pid, Math.min(cur, 8)); });
   bar.append(go); box.append(bar);
   return box;
 }
@@ -4129,7 +4218,7 @@ function progressReview(g, pid, memo, idp){
     save(pid, np); mb.disabled = true; mb.textContent = '메모로 저장됨';
   });
   mb.disabled = !writable;
-  op.addEventListener('click', () => { assistToggle(false); openStep(pid, g.step); });
+  op.addEventListener('click', () => { assistYield(); openStep(pid, g.step); });
   if (!writable) box.append(el('div','rnote','이 화면은 저장 권한이 없어 체크할 수 없습니다.'));
   count();
   return box;
@@ -4195,7 +4284,7 @@ function scheduleReview(g, pid, memo){
     save(pid, np); mb.disabled = true; mb.textContent = '메모로 저장됨';
   });
   mb.disabled = !writable;
-  op.addEventListener('click', () => { assistToggle(false); openStep(pid, g.step); });
+  op.addEventListener('click', () => { assistYield(); openStep(pid, g.step); });
   if (!writable) box.append(el('div','rnote','이 화면은 저장 권한이 없어 저장할 수 없습니다.'));
   return box;
 }
@@ -4223,7 +4312,7 @@ function assistBuild(){
   const bar = el('div','abar'); bar.append(att, fi, el('span','grow'), stop, send);
   const ft = el('div','afoot'); ft.append(thumbs, ta, bar);
   p.append(hd, log, ft);
-  document.body.append(p);
+  document.getElementById('shell').append(p);   // 본문 오른쪽 칸(휴대폰은 전체 화면)
   assist.panel = p;
   assist.fi = fi;
   assistIntro();
@@ -4254,9 +4343,12 @@ function assistCaps(){
 function assistToggle(open = !assist.open){
   if (!assist.panel) assistBuild();
   assist.open = open; assist.panel.hidden = !open;
+  document.body.classList.toggle('asst-on', open);   // 떠 있는 상세를 도우미 왼쪽으로
   document.getElementById('assistBtn').classList.toggle('on', open);
   if (open) assist.input.focus();
 }
+/** «과제 열기»: 넓은 화면은 도우미를 연 채로 가운데 칸에 과제를 연다. 휴대폰은 도우미가 전체 화면이라 닫는다 */
+function assistYield(){ if (matchMedia('(max-width:640px)').matches) assistToggle(false); }
 
 /* ---------- 목록 탭 공통: 유형 칩 + 검색 ---------- */
 const abOpen = new Set();   // 기관별 보기에서 담당자를 펼친 기관 id
@@ -4288,19 +4380,86 @@ function typeTools(head, repaintAll, repaintList){
 }
 const lastContactTs = pred => allActivities().find(x => pred(x.a))?.a.ts || '';
 
-/* ---------- 과제(Project) 목록 ---------- */
+/* ---------- 과제 탭 «목록» = 3칸 작업 화면(목록 | 상세 | 도우미)의 목록 칸 (Q-20260929-12) ----------
+   상단 검색·연도·공고·코디·완료 숨기기(visible) + 단계 필터 칩(칸반의 단계별 분포 대신). 가운데 칸은 renderDrawer가 그린다 */
+const stepCol = p => Math.min(Math.max(p.currentStep || 1, 1), DONE_COL);
+function renderWork(){
+  const bar = document.getElementById('wkbar'), ls = document.getElementById('wklist');
+  const sel = state.openId && state.projects.has(state.openId) ? state.openId : null;
+  workEl.classList.toggle('nosel', !sel);
+  workEl.classList.toggle('lstopen', state.wkList);
+  bar.replaceChildren();
+  subnavTo(bar, 'work');
+  const fold = el('button','btn wkfold', state.wkList ? '목록 접기' : '☰ 과제 목록');
+  fold.type = 'button'; fold.setAttribute('aria-expanded', String(state.wkList));
+  fold.addEventListener('click', () => { state.wkList = !state.wkList; paint(); });
+  bar.append(fold);
+
+  const keep = ls.scrollTop;
+  ls.replaceChildren();
+  const all = visible();
+  const rows = state.wkStep ? all.filter(([, p]) => String(stepCol(p)) === state.wkStep) : all;
+  const hd = el('div','wkhead');
+  hd.append(el('b', null, '과제'), el('span','mono', (rows.length !== all.length ? rows.length + '/' : '') + all.length + '건'));
+  ls.append(hd);
+  const cnt = new Map();
+  for (const [, p] of all) cnt.set(String(stepCol(p)), (cnt.get(String(stepCol(p))) || 0) + 1);
+  const chips = el('div','chips');
+  for (const k of ['', ...STEPS.map(s => String(s.n)), String(DONE_COL)]){
+    const s = STEPS[Number(k) - 1], n = k ? cnt.get(k) || 0 : all.length;
+    const b = el('button','chip' + (state.wkStep === k ? ' on' : ''), (!k ? '전체' : s ? '①②③④⑤⑥⑦⑧'[s.n - 1] : '완료') + ' ' + n);
+    b.type = 'button'; b.dataset.step = k;
+    b.title = !k ? '모든 단계' : s ? s.n + '. ' + s.name + ' — 주관 ' + ROLES[s.owner].label : '전 단계 완료';
+    b.style.setProperty('--rc', s ? rv(s.owner) : 'var(--ink-2)');
+    if (k && !n && state.wkStep !== k) b.disabled = true;
+    b.addEventListener('click', () => { state.wkStep = state.wkStep === k ? '' : k; paint(); });
+    chips.append(b);
+  }
+  ls.append(chips);
+  if (!rows.length) ls.append(el('div','wkempty', all.length ? '이 단계에 있는 과제가 없습니다.' : '조건에 맞는 과제가 없습니다. «+ 새 과제»로 등록하세요.'));
+  for (const [id, p] of rows) ls.append(wkRow(id, p, id === sel));
+  ls.scrollTop = keep;
+}
+/** 목록 칸 한 줄: 업체·차수 / 공고·현재 단계·다음 예정 D-day·지연·예시 */
+function wkRow(id, p, on){
+  const cur = stepCol(p), s = STEPS[cur - 1];
+  const b = el('button','wkrow' + (on ? ' on' : ''));
+  b.type = 'button'; b.dataset.id = id;
+  if (on) b.setAttribute('aria-current','true');
+  b.style.setProperty('--rc', s ? rv(s.owner) : 'var(--ink-3)');
+  const co = el('div','wkco');
+  co.append(el('b', null, p.company), el('span','mono', p.cycle));
+  const meta = el('div','wkmeta');
+  const pill = el('span','vpill', curStepName(p));
+  pill.style.setProperty('--rc', s ? rv(s.owner) : 'var(--ink-3)');
+  meta.append(noticeBadge(p), pill);
+  const nx = nextDue(p);
+  if (nx){
+    const d = el('span', null, '다음 ' + Number(nx.date.slice(5,7)) + '/' + Number(nx.date.slice(8)) + ' ');
+    d.title = nx.s.n + '. ' + nx.s.name + ' 예정 ' + nx.date;
+    d.append(el('span','dday ' + (nx.dd < 0 ? 'over' : nx.dd <= 7 ? 'soon' : 'far'), ddayLabel(nx.dd)));
+    meta.append(d);
+  }
+  const lt = lateSteps(p);
+  if (lt) meta.append(el('span','badge late','지연 ' + lt));
+  if (p.isSample) meta.append(el('span','badge sample','예시'));
+  b.append(co, meta);
+  b.addEventListener('click', () => { state.back = []; state.wkList = false; openProject(id); render(); });
+  return b;
+}
+
+/* ---------- 과제(Project) 목록 — 과제 탭 «표» ---------- */
 function renderProjects(){
   projEl.replaceChildren();
+  subnavTo(projEl, 'proj');
   const rows = statusRows();
-  const newB = el('button','btn primary','+ 새 과제');
-  newB.addEventListener('click', openNew);
   const lastAct = new Map(rows.map(r => [r.id, activitiesOf(r.p).find(a => a.channel !== 'calendar')?.ts || '']));   // 최근 연락 = 캘린더 등록 제외
   const csv = csvBtn('과제목록_' + today() + '.csv',
     [['업체명', r => r.p.company], ['차수', r => r.p.cycle], ['공고', r => NOTICES[r.p.notice]?.label || '미확인'], ['현재 단계', r => r.curName], ['완료 단계 수', r => r.done + '/8'],
      ['공급기업', r => r.p.contacts?.supplier?.org || r.p.contacts?.supplier?.name || ''], ['담당 코디', r => r.p.contacts?.coord?.name || ''],
      ['다음 예정일', r => r.next], ['최근 연락', r => fmtTs(lastAct.get(r.id))], ['지연', r => r.late], ['건너뜀', r => r.skip]], rows);
-  listHead(projEl, '과제 목록', rows.length + '건', [backupBtn(), csv, newB],
-    '과제(Project) = 업체 × 연도·차수. 8단계 진행을 과제 단위로 관리합니다. 상단 검색·연도·코디·완료 숨기기 필터가 적용되며, 행을 누르면 과제 상세가 열립니다.');
+  listHead(projEl, '과제 목록', rows.length + '건', [backupBtn(), csv],
+    '과제(Project) = 업체 × 연도·차수. 8단계 진행을 과제 단위로 관리합니다. 상단 검색·연도·코디·완료 숨기기 필터가 적용되며, 행을 누르면 «목록» 보기에서 그 과제 상세가 열립니다.');
 
   const card = el('section','rcard');
   const tb = document.createElement('table');
@@ -4310,7 +4469,7 @@ function renderProjects(){
   for (const r of rows){
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
-    tr.addEventListener('click', () => go('project', r.id));
+    tr.addEventListener('click', () => openStep(r.id, Math.min(r.cur, 8)));
     const co = td(r.p.company, 'co');
     co.append(document.createTextNode(' '), noticeBadge(r.p));
     if (r.p.isSample){ co.append(document.createTextNode(' ')); co.append(el('span','badge sample','예시')); }
@@ -4550,11 +4709,7 @@ function renderReport(){
   for (const r of rows){
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
-    tr.addEventListener('click', () => {
-      state.openId = r.id;
-      state.openSteps = new Set([String(Math.min(r.cur, 8))]);
-      render();
-    });
+    tr.addEventListener('click', () => openStep(r.id, Math.min(r.cur, 8)));
     tr.append(td(r.p.company,'co'), td(r.p.cycle,'num'), td(dash(r.p.contacts?.coord?.name)));
 
     const cs = document.createElement('td');
@@ -4699,8 +4854,10 @@ async function copySummary(btn, visits, rows){
 }
 
 /* ======================= 상세 패널 ======================= */
-let drawerHost = null;
-let drawerScroll = 0;
+let drawerHost = null;      // 떠 있는 상세(기관·담당자·장비·자산) {body, remove}
+let recScroll = 0;          // 떠 있는 상세 스크롤
+let drawerScroll = 0;       // 과제 상세(가운데 칸) 스크롤
+const detEl = document.getElementById('wkdet');
 const drafts = new Map();   // 메모 입력 중이던 텍스트를 다시 그릴 때 보존
 let actAllId = null;        // 활동 이력을 전부 펼친 과제
 let refocus = null;         // 다시 그린 뒤 포커스를 돌려줄 입력칸 {id, sel}
@@ -4708,31 +4865,41 @@ let redrawing = false;      // 상세 패널을 지우는 중
 
 function renderDrawer(){
   if (drawerHost) {
-    const prev = document.querySelector('.dr-body');
-    if (prev) drawerScroll = prev.scrollTop;
-    for (const ta of document.querySelectorAll('.noteadd textarea')){
+    recScroll = drawerHost.body.scrollTop;
+    drawerHost.remove(); drawerHost = null;
+  }
+  // 과제 상세(가운데 칸): 다시 그리기 전에 스크롤·입력 중인 값·포커스를 보존
+  const prev = detEl.querySelector('.dr-body');
+  if (prev){
+    drawerScroll = prev.scrollTop;
+    for (const ta of detEl.querySelectorAll('.noteadd textarea')){
       if (ta.value.trim()) drafts.set(ta.id, ta.value); else drafts.delete(ta.id);
     }
     // 진단 입력: 저장 전 값만 보존(저장된 값과 같으면 버려서 다른 사람의 수정이 가려지지 않게)
-    for (const ta of document.querySelectorAll('.diag textarea')){
+    for (const ta of detEl.querySelectorAll('.diag textarea')){
       if (ta.value.trim() !== ta.dataset.saved) drafts.set(ta.id, ta.value); else drafts.delete(ta.id);
     }
     const ae = document.activeElement;
-    if (!refocus && ae && ae.id && ae.closest && ae.closest('.diag')) refocus = { id:ae.id, sel:ae.selectionStart };
-    redrawing = true;   // 제거 중 blur로 저장이 끼어들지 않게(입력 중인 값은 drafts로 보존됨)
-    try { drawerHost.remove(); } finally { redrawing = false; }
-    drawerHost = null;
+    if (!refocus && ae && ae.id && detEl.contains(ae) && ae.closest('.diag')) refocus = { id:ae.id, sel:ae.selectionStart };
   }
+  redrawing = true;   // 제거 중 blur로 저장이 끼어들지 않게(입력 중인 값은 drafts로 보존됨)
+  try { detEl.replaceChildren(); } finally { redrawing = false; }
+
   if (state.rec){
     if (state.rec.t === 'account') renderAccountRec(state.rec.id);
     else if (state.rec.t === 'contact') renderContactRec(state.rec.id);
     else if (state.rec.t === 'product') renderProductRec(state.rec.id);
     else if (state.rec.t === 'asset') renderAssetRec(state.rec.id);
-    if (state.rec){ const b = document.querySelector('.dr-body'); if (b) b.scrollTop = drawerScroll; refocus = null; return; }
-    // 삭제돼 열 수 없으면 아래(과제 또는 닫힘)로
+    if (drawerHost) drawerHost.body.scrollTop = recScroll;   // 삭제돼 열 수 없으면 state.rec이 비워진다
   }
   const id = state.openId;
-  if (!id || !state.projects.has(id)) { drawerScroll = 0; drafts.clear(); refocus = null; if (!state.rec) state.back = []; return; }
+  if (!id || !state.projects.has(id)){
+    drawerScroll = 0; drafts.clear(); refocus = null;
+    if (!state.rec) state.back = [];
+    if (state.tab === 'work') detEl.append(el('div','wkempty', state.projects.size ? '왼쪽 목록에서 과제를 고르세요.' : '등록된 과제가 없습니다. «+ 새 과제»로 등록하세요.'));
+    return;
+  }
+  if (state.tab !== 'work'){ refocus = null; return; }   // 과제 상세는 과제 탭 «목록»에서만 그린다(입력 중이던 값은 drafts에 남음)
   const p = state.projects.get(id);
 
   const del = el('button','btn ghost danger','삭제');
@@ -4744,7 +4911,7 @@ function renderDrawer(){
   const sgAid = p.contacts?.sogongin?.accountId;
   const sub = [p.cycle + ' · 담당 ' + (p.contacts?.coord?.name || '미지정') + ' · ' + progress(p) + '/8 단계 완료'];
   if (sgAid && state.accounts.has(sgAid)) sub.push(' · ', linkBtn('기관 보기', () => go('account', sgAid)));
-  const body = drawerFrame(p.company + ' 과제 상세', p.company, sub, [del]);
+  const body = paneFrame(p.company, sub, [del]);
 
   const bytes = docBytes(p);
   if (bytes > SIZE_WARN){
@@ -6507,7 +6674,7 @@ function openNew(){
     }
     const id = newId('p');
     close();
-    state.openId = id; state.openSteps = new Set(['1']);
+    state.back = []; openProject(id, 1);   // 등록 직후 과제 탭 «목록»에서 그 과제를 연다
     const np = newProject({ company:name, cycle:cyc }, contacts);
     if (notice.value) np.notice = notice.value;
     save(id, np);
@@ -6529,7 +6696,7 @@ document.getElementById('fyear').addEventListener('change', e => { state.year = 
 document.getElementById('fnotice').addEventListener('change', e => { state.notice = e.target.value; repaint(); });
 document.getElementById('hideDone').addEventListener('change', e => { state.hideDone = e.target.checked; repaint(); });
 for (const [btnId] of TAB_GROUPS) document.getElementById(btnId).addEventListener('click', () => goTab(btnId));
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && (state.openId || state.rec)) closeRec(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.rec) closeRec(); });
 
 /* ======================= 기동 ======================= */
 render();
@@ -6538,14 +6705,14 @@ render();
   const c = window.claude;
   if (c && c.use) {
     downloads = await c.use('downloads');
-    if (downloads && state.tab !== 'board') paint();   // CSV 버튼 활성화 반영
+    if (downloads && state.tab !== 'board' && state.tab !== 'work') paint();   // CSV 버튼 활성화 반영
     c.use('mcp').then(x => { mcp = x; if (state.tab === 'sched' || state.tab === 'today') paint(); checkReplies(); });   // 없으면 null → Gmail·캘린더 기능 숨김. db 로드를 기다리게 하지 않는다
     c.use('assets').then(x => { assets = x; if (state.openId) render(); });   // 쓰기 권한자만 non-null → 자료함 올리기·삭제
     c.use('user').then(async u => {   // 작성자 id(by) · 소유자면 «관리» 탭
       user = u;
       if (u){ try { me = await u.id(); } catch (e) {} try { isOwner = !!(await u.isOwner()); } catch (e) {} }
       document.getElementById('tabAdmin').hidden = !isOwner;
-      if (!isOwner && state.tab === 'admin') state.tab = 'board';
+      if (!isOwner && state.tab === 'admin') state.tab = 'today';
       render();
     });
     document.getElementById('assistBtn').hidden = false;   // claude.ai 안이면 항상 보인다 — 못 쓰는 화면이면 도우미 창이 이유를 알린다

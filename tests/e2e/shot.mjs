@@ -17,9 +17,9 @@ fs.mkdirSync(outDir, { recursive:true });
 const data = dataFile ? JSON.parse(fs.readFileSync(dataFile, 'utf8')) : null;
 const COLS = ['projects', 'accounts', 'contacts', 'products', 'assets', 'programs', 'checklists'];
 
-const SHOTS = [   // [파일 이름, 탭 묶음 버튼 id, 도우미 창 열기]
-  ['board', 'tabBoard'], ['todo', 'tabTodo'], ['proj', 'tabProj'], ['org', 'tabOrg'],
-  ['eq', 'tabEq'], ['report', 'tabReport'], ['assist', 'tabBoard', true],
+const SHOTS = [   // [파일 이름, 화면 key(state.tab), 도우미 창 열기, 과제 선택('first' = 첫 과제 | 'none' = 선택 없음)]
+  ['todo', 'today'], ['work', 'work', false, 'first'], ['work-assist', 'work', true, 'first'], ['work-list', 'work', false, 'none'],
+  ['kanban', 'board'], ['proj', 'proj'], ['org', 'acc'], ['eq', 'prod'], ['report', 'report'], ['assist', 'today', true],
 ];
 
 const { server, url } = await start();
@@ -36,8 +36,13 @@ for (const [w, h, dev] of [[1400, 900, 'desk'], [390, 844, 'phone']]){
     }, { data, cols:COLS });
     await page.waitForTimeout(300);
   }
-  for (const [name, tab, assist] of SHOTS){
-    await page.evaluate(([tab, assist]) => { goTab(tab); assistToggle(!!assist); }, [tab, !!assist]);   // 보드 전역 함수 — 휴대폰에서 «더보기» 안의 탭도 연다
+  for (const [name, key, assist, pick] of SHOTS){
+    await page.evaluate(([key, assist, pick]) => {   // 보드 전역 함수·상태 — 휴대폰에서 «더보기» 안의 탭도 연다
+      state.tab = key; state.rec = null;
+      if (pick === 'first') state.openId = [...state.projects.keys()].sort()[0] || null;
+      if (pick === 'none') state.openId = null;
+      assistToggle(!!assist); render();
+    }, [key, !!assist, pick || '']);
     await page.waitForTimeout(250);
     const file = path.join(outDir, dev + '-' + name + '.png');
     await page.screenshot({ path:file });

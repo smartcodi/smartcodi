@@ -60,6 +60,8 @@ export async function closeModals(page){
     if (await c.count()) await c.first().click(); else break;
   }
 }
+/** 과제 상세 = 과제 탭 «목록»의 가운데 칸. 기관·담당자·장비·자산 상세는 떠 있는 .drawer */
+export const PD = '.wkdet';
 export async function closeDrawer(page){
   const d = page.locator('.drawer');
   if (await d.count()) await d.locator('.dr-head').getByRole('button', { name:'닫기', exact:true }).click();
@@ -77,8 +79,9 @@ export const saveModal = async page => { await modal(page).getByRole('button', {
 
 /* ---------- 탭 ---------- */
 // 위 탭 = 화면 묶음(2026-09-29): 할 일(today|sched) · 기관·담당자(acc|con) · 장비·자산(prod|asset) · 보고서(report|act).
+// 과제(work|board|proj) — work = 3칸 작업 화면(목록 | 상세 | 도우미), board = 칸반, proj = 표(2026-09-29 Q-20260929-12, «보드» 탭 없앰).
 // 묶음 버튼을 누른 뒤 보기 전환 칩(.subnav [data-key])으로 원하는 화면을 연다. 화면 key = 컨테이너 id
-const TAB = { board:'#tabBoard', today:'#tabTodo', sched:'#tabTodo', proj:'#tabProj', acc:'#tabOrg', con:'#tabOrg', prod:'#tabEq', asset:'#tabEq', report:'#tabReport', act:'#tabReport', admin:'#tabAdmin' };
+const TAB = { today:'#tabTodo', sched:'#tabTodo', work:'#tabProj', board:'#tabProj', proj:'#tabProj', acc:'#tabOrg', con:'#tabOrg', prod:'#tabEq', asset:'#tabEq', report:'#tabReport', act:'#tabReport', admin:'#tabAdmin' };
 export async function tab(page, key){
   await closeDrawer(page);
   await page.locator(TAB[key]).click();
@@ -109,7 +112,7 @@ export const contactId = async (page, org, name) => {
 };
 /** 새 과제. roles = {sogongin:[org,name], coord:[…], supplier:[…]} */
 export async function addProject(page, p){
-  await tab(page, 'board');
+  await tab(page, 'work');
   await page.locator('#newBtn').click();
   const m = modal(page);
   const aid = await findId(page, 'accounts', d => d.name === p.company && d.type === 'sogongin');
@@ -125,26 +128,32 @@ export async function addProject(page, p){
   await m.getByRole('button', { name:'등록', exact:true }).click();
   return until(() => projectId(page, p.company), '과제 저장 안 됨');
 }
-/** 과제 상세를 열고 단계 n을 펼친다 */
+/** 과제 탭 «목록»에서 과제를 골라 가운데 칸에 상세를 연다 */
 export async function openProject(page, company){
   const id = await projectId(page, company);
   if (!id) fail('과제 없음: ' + company);
-  if (!(await page.locator('.drawer h2', { hasText:company }).count())){
-    await tab(page, 'proj');
-    await page.locator('#proj tr', { hasText:company }).first().click();
-    await until(() => page.locator('.drawer h2', { hasText:company }).count(), '과제 상세가 열리지 않음');
+  if (!(await page.locator(PD + ' h2', { hasText:company }).count())){
+    await tab(page, 'work');
+    const row = page.locator('#wklist .wkrow[data-id="' + id + '"]');
+    if (!(await row.isVisible())){   // 휴대폰은 한 화면씩(← 목록), 1100px 이하는 목록이 접혀 있다
+      const back = page.locator(PD + ' .wkback'), fold = page.locator('#wkbar .wkfold');
+      if (await back.isVisible()) await back.click();
+      else if (await fold.isVisible()) await fold.click();
+    }
+    await row.click();
+    await until(() => page.locator(PD + ' h2', { hasText:company }).count(), '과제 상세가 열리지 않음');
   }
   return id;
 }
 export async function openStep(page, company, n){
   const id = await openProject(page, company);
   if (!(await page.locator('#st-' + id + '-' + n).count())){
-    await page.locator('.drawer .step-head').nth(n - 1).click();
+    await page.locator(PD + ' .step-head').nth(n - 1).click();
     await until(() => page.locator('#st-' + id + '-' + n).count(), n + '단계가 펼쳐지지 않음');
   }
   return id;
 }
-export const stepBody = (page, n) => page.locator('.drawer .step').nth(n - 1).locator('.step-body');
+export const stepBody = (page, n) => page.locator(PD + ' .step').nth(n - 1).locator('.step-body');
 export async function setPlanned(page, company, n, date){
   const id = await openStep(page, company, n);
   await page.locator('#d-' + id + '-' + n + '-planned').fill(date);
@@ -177,7 +186,7 @@ export async function addProduct(page, pr){
 }
 export async function addAsset(page, company, productName, a = {}){
   await openProject(page, company);
-  await page.locator('.drawer').getByRole('button', { name:'+ 장비 도입 등록' }).click();
+  await page.locator(PD).getByRole('button', { name:'+ 장비 도입 등록' }).click();
   const prid = await findId(page, 'products', d => d.name === productName);
   await fillForm(page, { productId:{ value:prid }, qty:String(a.qty || 1), ...(a.serial ? { serial:a.serial } : {}), ...(a.status ? { status:{ value:a.status } } : {}) });
   await saveModal(page);
@@ -236,9 +245,9 @@ export const syncBack = (mp, page) => copyState(mp, page);
 /* ---------- 삭제 ---------- */
 export async function deleteProject(page, company){
   const id = await openProject(page, company);
-  const b = page.locator('.drawer .dr-head').getByRole('button', { name:'삭제', exact:true });
+  const b = page.locator(PD + ' .dr-head').getByRole('button', { name:'삭제', exact:true });
   await b.click();
-  await page.locator('.drawer .dr-head').getByRole('button', { name:'삭제 확인' }).click();
+  await page.locator(PD + ' .dr-head').getByRole('button', { name:'삭제 확인' }).click();
   await until(async () => !(await docsOf(page, 'projects'))[id], '과제가 삭제되지 않음');
 }
 /** 기관·담당자·장비: 목록 행 → 상세 «수정» → 모달 «삭제» 두 번. 거부 문구를 돌려준다(삭제되면 '') */

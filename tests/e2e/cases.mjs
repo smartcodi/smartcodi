@@ -960,7 +960,7 @@ export async function case2(run){
       const dow = d => page.evaluate(x => withDow(x), d);
       if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
       await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
-      if ((await page.locator('#assist .abub.bot').first().locator('.agbtn').count()) !== 7) fail('새 대화 첫 인사에 기능 버튼 7개가 없음');
+      if ((await page.locator('#assist .abub.bot').first().locator('.agbtn').count()) !== 8) fail('새 대화 첫 인사에 기능 버튼 8개가 없음');
       const say = async text => {
         const before = await page.evaluate(() => window.__mock.samples.length);
         const n0 = await page.locator('#assist .plbox').count();
@@ -1124,14 +1124,14 @@ export async function case2(run){
     if (await page.locator('#newBtn').isVisible()) fail('할 일 탭에 «+ 새 과제»가 보임');
   });
   await run.step('C2-41', async () => {
-    // 도우미 기능 안내(Q-20260929-13): 첫 인사 = 기능 버튼 7개, 누르면 설명·예시 펼침(한 번에 하나, 다시 누르면 접힘)
+    // 도우미 기능 안내(Q-20260929-13): 첫 인사 = 기능 버튼 8개, 누르면 설명·예시 펼침(한 번에 하나, 다시 누르면 접힘)
     // «예시 넣기»는 입력창만 채움(sample 호출·말풍선 안 늘어남), 머리 «? 기능»은 대화를 지우지 않고 안내를 다시 띄움
     try {
       if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
       await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
       const g = page.locator('#assist .abub.bot').first();
       const names = (await g.locator('.agbtn').allInnerTexts()).map(t => t.trim());
-      if (names.join('|') !== '명함 등록|견적서 등록|양식 초안|진단표 나누기|방문 결과 체크|과제 현황|예정일 잡기') fail('기능 버튼: ' + names.join('|'));
+      if (names.join('|') !== '명함 등록|견적서 등록|양식 초안|진단표 나누기|방문 결과 체크|과제 현황|예정일 잡기|메일·카톡 문구') fail('기능 버튼: ' + names.join('|'));
       await hasText(g.locator('.rnote'), '사진·PDF는 저장하지 않습니다');
       await hasText(g.locator('.rnote'), 'Claude 사용량');
       const more = g.locator('.agmore');
@@ -1161,11 +1161,85 @@ export async function case2(run){
       await page.locator('#assist .ahead').getByRole('button', { name:'? 기능' }).click();
       if ((await page.locator('#assist .abub').count()) !== b0 + 1) fail('«? 기능»이 대화를 지우거나 안내를 안 띄움');
       const g2 = page.locator('#assist .abub').last();
-      if ((await g2.locator('.agbtn').count()) !== 7) fail('«? 기능» 안내에 버튼 7개가 없음');
+      if ((await g2.locator('.agbtn').count()) !== 8) fail('«? 기능» 안내에 버튼 8개가 없음');
+      await g2.locator('.agbtn', { hasText:'메일·카톡 문구' }).click();
+      for (const t of ['보내기 창 열기', '두 번', '카톡용 문구 복사', '[확인 필요]', '도우미는 보내지 않습니다']) await hasText(g2.locator('.agmore'), t);
       await g2.locator('.agbtn', { hasText:'명함 등록' }).click();
       await hasText(g2.locator('.agmore'), '등록해 줘');
       if ((await page.evaluate(() => window.__mock.samples.length)) !== s0) fail('안내 버튼이 Claude를 불렀음');
     } finally { await closeAssist(); }
+  });
+  await run.step('C2-42', async () => {
+    // 도우미 메일·카톡 문구(Q-20260929-05): 미리보기 → «보내기 창 열기»로 제목·본문·받는 역할이 채워짐. 도우미는 send_message를 부르지 않음
+    // 인사말·서명은 보드가 한 번만 붙임(존칭 겹침 없음), [확인 필요]가 남으면 Gmail 발송 막힘, 채워도 첫 클릭은 확인 단계, 받는 사람·과제 모르면 되묻기
+    const HEAD = '[테스트] C2영업 담당님 안녕하세요.';   // C2-06과 같은 addressee() 결과
+    try {
+      await H.openProject(page, CO);
+      const pid = await projectId(page, CO);
+      const a0 = ((await docsOf(page, 'projects'))[pid].activities || []).length;
+      const sendN = () => page.evaluate(() => window.__mock.calls.filter(c => c.tool === 'send_message').length);
+      const n0 = await sendN();
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const c0 = await page.locator('#assist .mlbox').count();
+      await page.locator('#as-input').fill(CO + ' 견적서 부가세 포함으로 다시 달라고 공급기업에 메일 써 줘'); await page.locator('#as-input').press('Enter');
+      await until(async () => (await page.locator('#assist .mlbox').count()) > c0, '문구 카드가 안 뜸', 15000);
+      const prompt = await page.evaluate(() => window.__mock.samples.at(-1).prompt);
+      for (const t of ['메일·카톡 문구 규칙', '[확인 필요]', '[현재 메일 제안]']) if (!prompt.includes(t)) fail('규칙 턴에 없음: ' + t);
+      if (!prompt.slice(prompt.lastIndexOf('\n[메일 근거]')).includes(pid)) fail('[메일 근거]에 말한 과제가 없음');
+      const box = page.locator('#assist .mlbox').last();
+      await hasText(box, '공급기업 ' + SALES);
+      await hasText(box.locator('.mlsub'), '[소공인 스마트제조] ' + CO);
+      await hasText(box.locator('.mlsub'), '견적서 재발행 요청 (부가세 포함)');
+      const pv = await box.locator('.mlbody').innerText();
+      if (!pv.startsWith(HEAD)) fail('미리보기 인사말: ' + pv.split('\n')[0]);
+      if (pv.split('안녕하세요').length !== 2) fail('인사말이 겹침: ' + pv);
+      if (pv.split('드림').length !== 2 || pv.includes('(목) 코디')) fail('서명이 겹침: ' + pv);
+      if (/대표 대표님|담당 담당님|담당자 담당자님/.test(pv)) fail('존칭 겹침: ' + pv);
+      if (!pv.includes('부가세 포함 금액으로 다시 발행')) fail('본문 요지가 없음');
+      await hasText(box.locator('.mlwarn'), '[확인 필요] 1곳');
+      await hasText(box, '인사말·서명 3줄');
+      await hasText(box, '도우미는 보내지 않습니다');
+      if ((await sendN()) !== n0) fail('도우미가 send_message를 불렀음');
+      // «보내기 창 열기» → 제목·본문·받는 역할이 채워진 기존 보내기 창. 도우미 칸을 가리지 않음
+      await box.getByRole('button', { name:'보내기 창 열기' }).click();
+      await until(() => page.locator('.modal.wide').count(), '보내기 창이 안 열림');
+      const m = page.locator('.modal.wide');
+      const subj = await m.locator('#send-subject').inputValue();
+      if (!subj.startsWith('[소공인 스마트제조] ' + CO) || !subj.includes('견적서 재발행 요청 (부가세 포함)')) fail('제목: ' + subj);
+      const body = await m.locator('#send-body').inputValue();
+      if (body.trim() !== pv.trim()) fail('보내기 창 본문이 미리보기와 다름:\n' + body);
+      const rc = t => m.locator('.sf').first().locator('.chip', { hasText:t });
+      if ((await rc('공급기업').getAttribute('aria-pressed')) !== 'true' || (await rc('소공인').getAttribute('aria-pressed')) !== 'false') fail('받는 역할이 공급기업만이 아님');
+      if (!(await m.locator('.chip.on', { hasText:'도우미 문구' }).count())) fail('«도우미 문구» 칩이 선택돼 있지 않음');
+      const ab = await page.locator('#assist').boundingBox(), mb = await m.boundingBox(), sb = await page.locator('.scrim.sscrim').boundingBox();
+      if (mb.x + mb.width > ab.x + 1) fail('보내기 창이 도우미를 가림');
+      if (sb.x + sb.width > ab.x + 1) fail('보내기 창 배경이 도우미를 덮음');
+      // 받는 사람을 더해도 본문 요지는 그대로, 호칭은 addressee()로(«대표 대표님» 없음)
+      await rc('소공인').click();
+      const b2 = await m.locator('#send-body').inputValue();
+      // 담당자 표시 이름 = 이름 + 직함(«[테스트] C2대표 대표») → addressee()는 «님»만 붙인다(«… 대표 대표 대표님»·«대표님 대표님» 없음)
+      if (b2.split('\n')[0] !== REP + ' 대표님, ' + HEAD || !b2.includes('부가세 포함 금액으로 다시 발행')) fail('소공인 추가 후 본문: ' + b2.split('\n')[0]);
+      await rc('소공인').click();
+      // [확인 필요]가 남으면 Gmail 발송 막힘 → 채우면 첫 클릭은 확인 단계(발송 0건)
+      await m.getByRole('button', { name:'Gmail로 보내기' }).click();
+      await hasText(m.locator('.sendstat'), '[확인 필요]');
+      await m.locator('#send-body').fill((await m.locator('#send-body').inputValue()).replace('[확인 필요]', '(테스트) 다음 주 중'));
+      await m.getByRole('button', { name:'Gmail로 보내기' }).click();
+      await until(async () => (await m.locator('.sendbar button.primary').innerText()).includes('발송 확인'), '확인 단계로 안 바뀜');
+      if ((await sendN()) !== n0 || (await page.evaluate(() => window.__mock.sent())).length) fail('첫 클릭에 발송됨');
+      await H.closeModals(page);
+      if (((await docsOf(page, 'projects'))[pid].activities || []).length !== a0) fail('보내지 않았는데 활동이 늘어남');
+      // 되묻기: 받는 사람 모름 → 카드 없음 / 다른 탭에서 업체명 없이 → 과제 되묻기
+      const c1 = await page.locator('#assist .mlbox').count();
+      await page.locator('#as-input').fill(CO + ' 견적서 다시 달라고 메일 써 줘'); await page.locator('#as-input').press('Enter');
+      await until(() => page.locator('#assist .abub.sys', { hasText:'누구에게 보낼지' }).count(), '받는 사람을 되묻지 않음', 15000);
+      await tab(page, 'today');
+      await page.locator('#as-input').fill('보완 요청 메일 써 줘'); await page.locator('#as-input').press('Enter');
+      await until(() => page.locator('#assist .abub.sys', { hasText:'어느 과제의 문구인지' }).count(), '과제를 되묻지 않음', 15000);
+      if ((await page.locator('#assist .mlbox').count()) !== c1) fail('되묻기인데 문구 카드가 뜸');
+      if ((await sendN()) !== n0) fail('도우미가 send_message를 불렀음');
+    } finally { await H.closeModals(page); await closeAssist(); }
   });
   await run.step('C2-32', async () => {
     // 화면 구성: 위 탭 7개(묶음) + 보기 전환 칩 · 기관별 보기에서 담당자 펼침·검색 강조 · 통합 검색으로 담당자 상세

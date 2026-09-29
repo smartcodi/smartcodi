@@ -1,6 +1,7 @@
 // CASE 1~6 E2E 실행 → results/<회차>.json → 엑셀(doc/테스트/E2E_시나리오_CASE1-6.xlsx)에 회차 기록
 //   node run.mjs            전체
 //   node run.mjs 2 3        일부 CASE만 (앞 CASE가 만든 데이터에 의존하지 않도록 각 CASE가 스스로 준비)
+//   node run.mjs 2 --no-xlsx  엑셀에 회차를 쓰지 않음(개발 중 확인용 — 엑셀 기록은 board-tester 에이전트만)
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,6 +16,7 @@ import { CASES } from './scenarios.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..', '..');
 const XLSX = path.join(root, 'doc', '테스트', 'E2E_시나리오_CASE1-6.xlsx');
+const noXlsx = process.argv.includes('--no-xlsx');
 const only = process.argv.slice(2).map(Number).filter(Boolean);
 const which = only.length ? only : [1, 2, 3, 4, 5, 6];
 
@@ -70,7 +72,8 @@ fs.mkdirSync(path.join(here, 'results'), { recursive:true });
 const stamp = new Date(started.getTime() + 9 * 3600e3).toISOString().slice(0, 16).replace(/[-:T]/g, '');
 const json = path.join(here, 'results', stamp + '.json');
 fs.writeFileSync(json, JSON.stringify(out, null, 2));
-try {
+if (noXlsx) console.log('엑셀 기록 건너뜀(--no-xlsx). 결과: ' + json);
+else try {
   const r = execFileSync('python', [path.join(here, 'write_xlsx.py'), 'record', XLSX, json], { encoding:'utf8', env:{ ...process.env, PYTHONIOENCODING:'utf-8' } });
   console.log(r.trim());
 } catch (e){

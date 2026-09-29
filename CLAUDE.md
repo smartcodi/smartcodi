@@ -12,9 +12,10 @@
 ```
 smartcodi2/
 ├── CLAUDE.md                       # 이 파일
+├── .claude/agents/                 # 에이전트 정의 3개 — «에이전트» 절
 ├── smartcodi-board.html            # 단계관리 웹앱 (단일 파일)
 ├── tools/form-values.mjs           # 보드 과제 → kordoc fill 값 JSON (양식 작성 보조)
-├── tests/e2e/                     # E2E 하네스: 보드 HTML + window.claude 목 + Playwright. node run.mjs → 엑셀에 회차 기록
+├── tests/e2e/                     # E2E 하네스: 보드 HTML + window.claude 목 + Playwright. node run.mjs → 엑셀에 회차 기록. shot.mjs = 탭·도우미 창 스크린샷(1400·390px)
 ├── forms/                          # 한글에서 .hwpx로 저장한 양식 원본. 사업계획서·수행일지·결과보고서 3개 있음(= 교재 31_합숙/양식/01_HWP의 .hwpx와 같은 파일, 2026-09-29 확인). 이 원본으로 fill dry-run은 아직 안 돌림
 ├── output/                         # Claude가 만든 양식 파일(.hwpx) 저장 위치. _data/는 테스트용 예시 데이터 내보내기
 └── doc/
@@ -23,7 +24,7 @@ smartcodi2/
     ├── 코디네이터 업무 흐름도_시간흐름순2.png
     ├── 테스트/                      # E2E 시나리오 정본 E2E_시나리오_CASE1-6.xlsx(회차별 결과) · 질문·실행결과 md · README
     ├── 설계/                        # 기능 설계 문서 6개 — «기능 설계 문서» 절 (공개 저장소에 올림)
-    ├── 작업기록/                    # 세션 인수인계서·검수 개선제안 (날짜별, 로컬 전용)
+    ├── 작업기록/                    # 세션 인수인계서·검수 개선제안·에이전트 보고서·질문지.md (로컬 전용)
     ├── 교재/                        # 2026년 사업 공고 원문·양식 원본 (읽기 전용)
     │   ├── 31_합숙/양식/             #   서식 원본 hwp·hwpx·doc·pdf (`doc/설계/양식_작성.md`)
     │   ├── 98_...모집 공고/          #   원공고: 연매출 2억원 이상
@@ -91,7 +92,19 @@ smartcodi2/
 - GitHub `smartcodi/smartcodi`는 **공개 저장소 — 코드만 올린다.** `.gitignore`가 `doc/*`(예외: `단계_역할_정본.md`·`테스트/`·`설계/`)·`forms/`·`output/`·`CLAUDE.local.md`·`*.code-workspace`·`tests/e2e/node_modules/`·`tests/e2e/results/`를 막는다.
 - 커밋 전 개인정보 검사: `CLAUDE.local.md`의 검사 명령을 돌린다(검사 패턴 자체가 개인 정보라 여기 적지 않는다).
 - main에 직접 커밋하지 않는다: 브랜치 → PR. **병합(`gh pr merge`)은 Claude Code 자동 모드가 막는다**(2026-09-29 확인) — 사용자에게 `! gh pr merge <번호> --merge --delete-branch`를 안내한다.
-- E2E(`node run.mjs`)는 추적 중인 엑셀에 회차를 쓴다. 엑셀을 고친 PR이 둘 열려 있으면 바이너리 충돌이 나므로 한쪽에서만 돌린다.
+- E2E(`node run.mjs`)는 추적 중인 엑셀에 회차를 쓴다. 엑셀을 고친 PR이 둘 열려 있으면 바이너리 충돌이 나므로 한쪽에서만 돌린다. 개발 중 확인은 `node run.mjs <CASE> --no-xlsx`(엑셀 안 씀).
+- PR을 다른 PR 위에 쌓았으면, 아래쪽 병합을 안내하기 전에 위쪽 PR의 base를 main으로 바꾼다(`gh pr edit <번호> --base main`). 안 하면 `--delete-branch`가 위쪽 PR을 닫아 다시 열 수 없다(#11 → #12, 2026-09-29).
+
+## 에이전트 — `.claude/agents/`
+
+| 이름 | 모델 | 맡는 일 |
+|---|---|---|
+| `structure-reviewer` | sonnet | 폴더·문서 정합성 «점검 → 수정 → 재점검»(새 지적 0건 또는 3라운드). 문서·폴더·테스트 도구만 고치고 보드 HTML은 제안만. E2E는 안 돌림 |
+| `assistant-dev` | opus | 도우미 기능. 모드 A = 후보를 질문지에 올리고 멈춤, 모드 B = 승인된 질문 ID 하나를 브랜치 하나로 구현(`--no-xlsx`로 자체 확인) |
+| `board-tester` | sonnet | 개발과 따로 검증: 전체 E2E(**엑셀 회차 기록은 이 에이전트만**), `shot.mjs` 스크린샷 판독, CSS 이름 충돌, «절대 하지 말 것» 위반, 목·E2E 누락. 보드 HTML은 안 고침 |
+
+- 흐름: `assistant-dev` → `board-tester` → 지적이 있으면 개발 쪽으로 되돌림(SendMessage) → 통과하면 메인 세션이 push·PR·게시 → 사용자가 병합. 에이전트는 브랜치 커밋까지만 하고 push·PR·게시·병합은 하지 않는다. 한 번에 하나씩 돌린다(작업 폴더가 하나, E2E는 gitignore된 `doc/교재`의 PDF를 읽어 worktree에서 전체가 안 돎).
+- 질문지 `doc/작업기록/질문지.md`: 서브에이전트는 사용자에게 직접 못 묻는다 → 에이전트가 «대기»로 올리고, 메인 세션이 AskUserQuestion으로 묻고 답을 적는다.
 
 ## 작업 함정 (실제로 겪음)
 
@@ -125,7 +138,7 @@ smartcodi2/
 | 백업에서 복구·이관 | 백업 JSON의 각 컬렉션을 문서별로 `ArtifactData` batch `set`(50건씩, `file_path` 사용). 대상 아티팩트를 바꾸면 `BOARD_URL`도 바꾼다. 작성자 `by` id는 같은 소유자의 아티팩트 사이에서만 같은 사람을 가리킨다 |
 | 과제 문서가 한도에 가까움 | 상세에 180KB 초과 경고 → 백업 후 «1년 지난 활동 본문 정리»(연락 이력 body만 비움, 메모는 그대로) |
 | 단계·task 문구 변경 | xlsx → `doc/단계_역할_정본.md` → 앱 `STEPS` → 재게시 → 키 마이그레이션 |
-| 보드 수정 후 회귀 테스트 | `cd tests/e2e && node run.mjs` (약 2분, 전체 CASE 1~6) → `doc/테스트/E2E_시나리오_CASE1-6.xlsx`에 회차 추가. 엑셀을 닫고 실행. 목(`mock-claude.js`)은 실제 플랫폼을 흉내 낸 것 — 가정은 `doc/테스트/실행결과_*.md`. 보드에 새 플랫폼 호출을 쓰면 목에도 추가 |
+| 보드 수정 후 회귀 테스트 | `cd tests/e2e && node run.mjs` (약 2분, 전체 CASE 1~6) → `doc/테스트/E2E_시나리오_CASE1-6.xlsx`에 회차 추가. 엑셀을 닫고 실행. 목(`mock-claude.js`)은 실제 플랫폼을 흉내 낸 것 — 가정은 `doc/테스트/실행결과_*.md`. 보드에 새 플랫폼 호출을 쓰면 목에도 추가. 개발 중엔 `node run.mjs 2 --no-xlsx`, 화면 확인은 `node shot.mjs <폴더>` |
 | 다른 사람에게 공유 | 아티팩트 Share 메뉴에서 **Editor**로 이메일 초대. 공개 링크는 켜지 않는다 |
 
 ## 문서화 규칙

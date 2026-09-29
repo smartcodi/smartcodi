@@ -272,6 +272,14 @@ main.wkmode{overflow:hidden;padding:0}
 .abub.sys{align-self:stretch;max-width:none;font-size:12px;color:var(--ink-2);background:color-mix(in oklab,var(--warn) 8%,var(--surface));border:1px solid color-mix(in oklab,var(--warn) 22%,var(--line))}
 .abub .cardbox{white-space:normal;margin-top:8px}
 .abub .dprev{white-space:normal;margin-top:8px}
+/* 도우미 기능 안내(첫 인사·«? 기능») — 버튼을 누르면 아래에 설명이 펼쳐진다(한 번에 하나) */
+.aguide{white-space:normal;margin-top:8px;display:flex;flex-direction:column;gap:8px}
+.agbtns{display:flex;flex-wrap:wrap;gap:5px}
+.agbtn{font-size:12px;padding:4px 9px}
+.agbtn[aria-expanded="true"]{border-color:var(--accent);color:var(--accent);background:color-mix(in oklab,var(--accent) 8%,var(--surface))}
+.agmore{border:1px solid var(--line-soft);border-radius:7px;padding:8px 10px;background:var(--surface);font-size:12px;display:flex;flex-direction:column;gap:4px}
+.agmore .agex{color:var(--ink-2);font-style:italic}
+.agmore > .btn{align-self:flex-start}
 .dview details{border:1px solid var(--line-soft);border-radius:7px;margin-top:6px;background:var(--surface)}
 .dview summary{cursor:pointer;padding:6px 9px;font-size:12px;font-weight:600;color:var(--ink-2)}
 .dview table{border-collapse:collapse;width:100%;font-size:12px}
@@ -529,6 +537,7 @@ button.gcal{cursor:pointer;font-family:inherit}
   .mgrid{grid-template-columns:1fr}
   .crow{grid-template-columns:1fr 1fr}
   .crow .rl{grid-row:auto;grid-column:1/-1}
+  .crow.m{grid-template-columns:1fr}
   .modal.wide{width:calc(100% - 20px)}
   .sf textarea{min-height:160px}
   /* 하단 탭바: 할 일·과제·보고서 + 더보기(기관·담당자·장비·자산·관리) */
@@ -4295,7 +4304,9 @@ function assistBuild(){
   const nw = el('button','btn ghost','새 대화'), cx = el('button','btn ghost','닫기');
   nw.addEventListener('click', () => { assist.busy?.abort(); assist.turns = []; assist.card = null; assist.lastReview = null; assist.quote = null; assist.diag = null; assist.progress = null; assist.schedule = null; assist.lastKind = ''; assist.imgs = []; assist.pdfs = []; assistThumbs(); assist.log.replaceChildren(); assistIntro(); });
   cx.addEventListener('click', () => assistToggle(false));
-  hd.append(el('b', null, '보드 도우미'), el('span','grow'), nw, cx);
+  const hp = el('button','btn ghost','? 기능'); hp.title = '도우미가 할 수 있는 일 — 대화는 그대로 두고 안내를 아래에 다시 띄웁니다';
+  hp.addEventListener('click', () => assistIntro());
+  hd.append(el('b', null, '보드 도우미'), el('span','grow'), hp, nw, cx);
   const log = el('div','alog'); assist.log = log;
   const thumbs = el('div','athumbs'); thumbs.hidden = true; assist.thumbs = thumbs;
   const ta = document.createElement('textarea'); ta.id = 'as-input'; ta.rows = 2; ta.placeholder = '명함 사진 붙여 넣기(Ctrl+V) · 견적서 PDF 📎 · «대한정밀 2차 수행일지 써 줘»'; assist.input = ta;
@@ -4318,8 +4329,35 @@ function assistBuild(){
   assistIntro();
   assistCaps();
 }
+/** 도우미 기능 안내(첫 인사·«? 기능»). 안내 전용 — 모드를 바꾸지 않고, 의도는 Claude가 말로 판단한다. 기능이 늘면 여기에 한 줄 추가. 예시 업체명은 예시 이름 */
+const ASSIST_GUIDE = [
+  { name:'명함 등록', does:'명함 사진을 붙여 넣거나(Ctrl+V)·끌어 놓거나 명함 글자를 붙여 넣으면 기관·담당자 카드로 보여 드립니다. 틀린 곳은 «유형은 공급기업이야»처럼 말로 고칩니다.', human:'«등록해 줘»라고 하면 미리 채운 등록 창이 열립니다. 저장은 직접 누르세요.', ex:'이 명함으로 기관이랑 담당자 등록해 줘' },
+  { name:'견적서 등록', does:'«📎 첨부»로 견적서 PDF를 올리면 품목마다 공급기업·과제·구분·수량을 카드로 보여 드립니다.', human:'확인하고 «선택한 N건 등록»을 누르면 장비와 도입 장비(자산, 검토 중)로 들어갑니다. 기존 장비 단가는 «단가 갱신»을 체크할 때만 바뀝니다.', ex:'이 견적서 읽어 줘' },
+  { name:'양식 초안', does:'수행일지(1~4차)·사업계획서·결과보고서 초안을 보드 값과 대화에서 알려 준 내용으로 써서 보여 드립니다. 근거가 없는 칸은 «미확인»으로 둡니다.', human:'미리보기를 확인하고 «Word로 받기» 또는 «단계 산출물로 등록»을 누르세요.', ex:'대한정밀 2차 수행일지 써 줘. 오늘 방문에서 불량 기록 방식을 논의함' },
+  { name:'진단표 나누기', does:'방문 메모를 그 차수 현장진단표 항목별로 나눠 보여 드립니다. 메모에 없는 항목은 비워 둡니다.', human:'항목을 확인하고 «선택한 N칸을 진단표에 넣기»를 누르세요. 이미 값이 있는 칸은 선택 해제로 시작합니다.', ex:'대한정밀 1차 방문 메모: 대표가 "불량이 하루 30개쯤"이라고 함, 기록은 종이 일지' },
+  { name:'방문 결과 체크', does:'끝냈다고 말한 업무·산출물과 완료일을 카드로 보여 드립니다. 끝났다고 말한 것만 제안합니다.', human:'«선택한 항목 체크»를 누르면 체크됩니다. 단계를 완료로 바꾸는 것은 과제 상세에서 직접 하세요.', ex:'대한정밀 2차 방문 오늘 끝남. 개선과제 도출했고 대표 서명 받음' },
+  { name:'과제 현황', does:'과제 한 건의 현재 단계·다음 예정·남은 업무·미수집 서명·회신 대기·점검 문제를 보드 값으로 카드에 보여 드립니다(저장 없음).', human:'«과제 열기»로 상세에 가서 처리하세요. 여러 과제를 한꺼번에 보려면 «할 일» 탭을 쓰세요.', ex:'대한정밀 뭐가 남았어?' },
+  { name:'예정일 잡기', does:'말한 일정을 그 단계 예정일로 요일과 함께 카드에 보여 드립니다. 시각은 캘린더에 들어가지 않고, «단계 메모로도 저장»을 누르면 메모로 남습니다.', human:'«예정일 저장»을 누른 뒤 «캘린더에 등록»(이미 등록된 일정이면 «캘린더 날짜 수정»)으로 구글 캘린더에 종일 일정으로 올리세요. 캘린더 커넥터가 없는 화면에서는 «구글 캘린더에 추가 ↗» 링크로 올립니다.', ex:'대한정밀 3차 방문 10월 15일 오후 2시로 잡혔어' },
+];
 function assistIntro(){
-  assistBubble('bot', '할 수 있는 일은 일곱 가지입니다.\n① 명함 등록 — 명함 사진을 붙여 넣거나(Ctrl+V) 명함 내용을 붙여 넣고 «기관이랑 담당자 등록해 줘»\n② 양식 초안 — «대한정밀 2차 수행일지 써 줘. 오늘 방문에서 … 논의함»처럼 말하면 수행일지(1~4차)·사업계획서·결과보고서 초안을 써서 보여 드립니다. «단계 산출물로 등록»을 누르면 그 단계에 버전으로 남습니다.\n③ 견적서 등록 — 📎로 견적서 PDF를 첨부하고 «이 견적서 읽어 줘». 표에서 공급기업·과제·품목을 확인하고 «선택한 N건 등록»을 누르면 장비와 도입 장비(자산, 검토 중)로 들어갑니다.\n④ 현장진단표 — «대한정밀 1차 방문 메모: 대표가 "불량이 하루 30개쯤"이라고 함, 기록은 종이 일지…»처럼 메모를 붙여 넣으면 그 차수 진단표 항목별로 나눠 보여 드립니다. «선택한 N칸을 진단표에 넣기»를 누르면 들어갑니다(기존 값은 덮어쓰지 않게 해제로 시작).\n⑤ 과제 현황 — «대한정밀 뭐가 남았어?»처럼 물으면 현재 단계·다음 예정·남은 업무·미수집 서명·회신 대기·점검 문제를 보드 값으로 카드에 보여 드립니다. «과제 열기»로 상세로 갑니다.\n⑥ 방문 결과 체크 — «대한정밀 2차 방문 오늘 끝남. 개선과제 도출했고 대표 서명 받음»처럼 말하면 끝낸 업무·산출물과 완료일을 카드로 보여 드립니다. «선택한 항목 체크»를 누르면 체크됩니다. 끝났다고 말한 것만 제안하고, 단계 상태(완료로 바꾸기)는 과제 상세에서 직접 하세요.\n⑦ 예정일 잡기 — «대한정밀 3차 방문 10월 15일 오후 2시로 잡혔어», «납품은 다음 주 수요일»처럼 말하면 그 단계 예정일을 요일과 함께 카드로 보여 드립니다. «예정일 저장»을 누른 뒤 «캘린더에 등록»으로 구글 캘린더에 종일 일정으로 올립니다(시각은 메모로).\n저장·등록은 직접 누르시면 됩니다. 보드와 대화에 없는 내용은 «미확인»으로 둡니다.\n· 사진·PDF는 저장하지 않습니다 · 대화할 때마다 이 계정의 Claude 사용량을 씁니다');
+  const box = el('div','aguide'), row = el('div','agbtns'), more = el('div','agmore'); more.hidden = true;
+  const btns = ASSIST_GUIDE.map(g => {
+    const b = el('button','btn ghost agbtn', g.name); b.type = 'button'; b.setAttribute('aria-expanded','false');
+    b.addEventListener('click', () => {
+      const open = b.getAttribute('aria-expanded') !== 'true';
+      btns.forEach(x => x.setAttribute('aria-expanded','false'));
+      more.hidden = !open;
+      if (!open) return;
+      b.setAttribute('aria-expanded','true');
+      const put = el('button','btn ghost','예시 넣기'); put.type = 'button';
+      put.addEventListener('click', () => { assist.input.value = g.ex; assist.input.focus(); });   // 입력창만 채운다 — 보내기는 사람이
+      more.replaceChildren(el('div', null, g.does), el('div', null, g.human), el('div','agex', '예: «' + g.ex + '»'), put);
+    });
+    return b;
+  });
+  row.append(...btns);
+  box.append(row, more, el('div','rnote','저장·등록은 직접 누르시면 됩니다. 보드와 대화에 없는 내용은 «미확인»으로 둡니다. 사진·PDF는 저장하지 않습니다. 대화할 때마다 이 계정의 Claude 사용량을 씁니다.'));
+  assistBubble('bot', '할 수 있는 일입니다. 버튼을 누르면 설명과 예시가 펼쳐집니다(원하는 일은 그냥 말로 하셔도 됩니다).', box);
 }
 /** 이 화면이 Claude·사진을 쓸 수 있는지 확인해 알린다(말없이 숨기지 않는다). sampleState: pending → ready | none */
 function assistCaps(){

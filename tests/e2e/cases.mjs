@@ -960,7 +960,7 @@ export async function case2(run){
       const dow = d => page.evaluate(x => withDow(x), d);
       if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
       await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
-      await hasText(page.locator('#assist .abub.bot').first(), '일곱 가지');
+      if ((await page.locator('#assist .abub.bot').first().locator('.agbtn').count()) !== 7) fail('새 대화 첫 인사에 기능 버튼 7개가 없음');
       const say = async text => {
         const before = await page.evaluate(() => window.__mock.samples.length);
         const n0 = await page.locator('#assist .plbox').count();
@@ -1122,6 +1122,50 @@ export async function case2(run){
     await until(async () => (await page.locator('#work').isVisible()) && (await page.locator(PD + ' h2', { hasText:CO }).count()), '표 행으로 과제 상세가 안 열림');
     await tab(page, 'today');
     if (await page.locator('#newBtn').isVisible()) fail('할 일 탭에 «+ 새 과제»가 보임');
+  });
+  await run.step('C2-41', async () => {
+    // 도우미 기능 안내(Q-20260929-13): 첫 인사 = 기능 버튼 7개, 누르면 설명·예시 펼침(한 번에 하나, 다시 누르면 접힘)
+    // «예시 넣기»는 입력창만 채움(sample 호출·말풍선 안 늘어남), 머리 «? 기능»은 대화를 지우지 않고 안내를 다시 띄움
+    try {
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const g = page.locator('#assist .abub.bot').first();
+      const names = (await g.locator('.agbtn').allInnerTexts()).map(t => t.trim());
+      if (names.join('|') !== '명함 등록|견적서 등록|양식 초안|진단표 나누기|방문 결과 체크|과제 현황|예정일 잡기') fail('기능 버튼: ' + names.join('|'));
+      await hasText(g.locator('.rnote'), '사진·PDF는 저장하지 않습니다');
+      await hasText(g.locator('.rnote'), 'Claude 사용량');
+      const more = g.locator('.agmore');
+      if (await more.isVisible()) fail('누르기 전에 설명이 펼쳐져 있음');
+      const btn = n => g.locator('.agbtn', { hasText:n });
+      const expanded = () => g.locator('.agbtn[aria-expanded="true"]').allInnerTexts();
+      await btn('양식 초안').click();
+      await hasText(more, '단계 산출물로 등록');
+      await hasText(more.locator('.agex'), '대한정밀 2차 수행일지 써 줘');
+      await btn('과제 현황').click();
+      await hasText(more, '할 일');
+      if ((await expanded()).join('|') !== '과제 현황') fail('한 번에 하나만 펼쳐져야 함: ' + (await expanded()).join('|'));
+      await btn('과제 현황').click();
+      if (await more.isVisible()) fail('다시 눌러도 설명이 안 접힘');
+      if ((await expanded()).length) fail('접었는데 눌린 버튼이 남음');
+      await btn('예정일 잡기').click();
+      for (const t of ['캘린더에 등록', '캘린더 날짜 수정', '구글 캘린더에 추가', '단계 메모로도 저장']) await hasText(more, t);
+      const s0 = await page.evaluate(() => window.__mock.samples.length), b0 = await page.locator('#assist .abub').count();
+      await page.locator('#as-input').fill('');
+      await more.getByRole('button', { name:'예시 넣기' }).click();
+      if ((await page.locator('#as-input').inputValue()) !== '대한정밀 3차 방문 10월 15일 오후 2시로 잡혔어') fail('예시가 입력창에 안 들어감: ' + await page.locator('#as-input').inputValue());
+      await page.waitForTimeout(500);
+      if ((await page.evaluate(() => window.__mock.samples.length)) !== s0) fail('«예시 넣기»가 Claude를 불렀음');
+      if ((await page.locator('#assist .abub').count()) !== b0) fail('«예시 넣기»가 말풍선을 만들었음(자동 발송)');
+      await page.locator('#as-input').fill('');
+      // «? 기능»: 기존 말풍선은 그대로, 안내가 맨 아래에 하나 더
+      await page.locator('#assist .ahead').getByRole('button', { name:'? 기능' }).click();
+      if ((await page.locator('#assist .abub').count()) !== b0 + 1) fail('«? 기능»이 대화를 지우거나 안내를 안 띄움');
+      const g2 = page.locator('#assist .abub').last();
+      if ((await g2.locator('.agbtn').count()) !== 7) fail('«? 기능» 안내에 버튼 7개가 없음');
+      await g2.locator('.agbtn', { hasText:'명함 등록' }).click();
+      await hasText(g2.locator('.agmore'), '등록해 줘');
+      if ((await page.evaluate(() => window.__mock.samples.length)) !== s0) fail('안내 버튼이 Claude를 불렀음');
+    } finally { await closeAssist(); }
   });
   await run.step('C2-32', async () => {
     // 화면 구성: 위 탭 7개(묶음) + 보기 전환 칩 · 기관별 보기에서 담당자 펼침·검색 강조 · 통합 검색으로 담당자 상세
@@ -1374,6 +1418,10 @@ export async function case4(run, { mobilePage }){
   });
   await run.step('C4-05', async () => {
     await H.openStep(mp, CO, 1);
+    // 역할별 담당자: 휴대폰에서 라벨 위·내용 아래 전체 폭(.crow.m 70px 열에 눌리던 버그)
+    const cw = await mp.evaluate(() => [...document.querySelectorAll('.crow.m .cbody')].map(n => n.getBoundingClientRect().width));
+    const vw = await mp.evaluate(() => window.innerWidth);
+    if (!cw.length || cw.some(w => w < vw / 2)) fail('역할별 담당자 칸이 좁음: ' + cw.map(Math.round).join(',') + ' / 화면 ' + vw);
     const keys = Object.keys(D1);
     const fs = await mp.locator(`#dg-${pid}-1-0`).evaluate(n => getComputedStyle(n).fontSize);
     if (fs !== '16px') fail('입력칸 글자 ' + fs);

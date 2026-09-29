@@ -203,6 +203,12 @@
         email:'card@example.com', kakao:'', address:'서울 금천구 가산디지털1로 1', addressDetail:'3층', website:'example.com', other:'' };
       if (/등록해|^네/.test(last)) return { reply:'(목) 등록 창을 엽니다.', card:null, action:'register' };
       if (/공급기업/.test(last)) return { reply:'(목) 유형을 공급기업으로 고쳤습니다.', card:Object.assign({}, CARD, { orgType:'supplier', orgTypeWhy:'사용자 정정' }), action:'none' };
+      // 과제 한 건 현황: 과제 목록의 업체명이 말에 있으면 그 id, 없으면 ""(보드가 열린 과제로 대신하거나 되묻는다). reply에 일부러 수치를 넣지 않는다
+      if (/남았|어디까지|현황/.test(last)){
+        const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));
+        const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => last.includes(co));
+        return { reply:'(목) 과제 현황입니다. 아래 카드를 보세요.', card:null, quote:null, diag:null, action:'status', projectId: proj ? proj[1] : '' };
+      }
       if (/과제/.test(last)) return { reply:'(목) 과제 조회는 아직 못 합니다.', card:null, action:'none' };
       return { reply:'(목) [테스트] 명함정밀(소공인 추정), [테스트] 명함 대표, 010-0000-7777로 읽었습니다. 등록 창을 열까요?', card:CARD, action:'none' };
     }

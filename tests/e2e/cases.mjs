@@ -578,8 +578,9 @@ export async function case2(run){
     await H.saveModal(page);
     const aid = await findId(page, 'accounts', d => d.name === CARD_ORG && d.type === 'supplier');
     await until(async () => !!(await findId(page, 'contacts', d => d.name === CARD_NAME && d.accountId === aid)), '대화로 등록한 담당자 저장·연결 안 됨');
-    await say('한빛정밀 과제 어디까지 진행됐어?');
-    await hasText(page.locator('#assist .abub.bot').last(), '과제 조회는 아직 못 합니다');
+    await say('한빛정밀 과제 어디까지 진행됐어?');   // 목록에 없는 업체 + 열린 과제 없음 → 현황 카드 없이 되묻기
+    await hasText(page.locator('#assist .abub.sys').last(), '어느 과제인지 모르겠습니다');
+    if (await page.locator('#assist .svbox').count()) fail('모르는 과제인데 현황 카드가 뜸');
     await page.locator('#assist').getByRole('button', { name:'닫기' }).click();
     await until(async () => !(await page.locator('#assist').isVisible()), '도우미가 안 닫힘');
     await cleanupCase(page, { company:'(없음)', contacts:[CARD_NAME], accounts:[CARD_ORG] });
@@ -792,6 +793,50 @@ export async function case2(run){
       await hasText(stepBody(page, 1).locator('.diag .subhead'), '5/9');
       await H.closeDrawer(page);
     } finally { await closeAssist(); }
+  });
+  await run.step('C2-35', async () => {
+    // 과제 현황: Claude(목)는 과제만 고르고(action status) 카드 내용은 보드가 만든다 → «과제 열기» → 열린 과제로 되묻지 않고 카드. 저장 없음
+    try {
+      await H.closeDrawer(page);
+      await tab(page, 'board');
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const pid = await projectId(page, CO);
+      const doc0 = JSON.stringify((await docsOf(page, 'projects'))[pid]);
+      const ask = async text => {
+        const before = await page.evaluate(() => window.__mock.samples.length);
+        const n0 = await page.locator('#assist .svbox').count();
+        await page.locator('#as-input').fill(text); await page.locator('#as-input').press('Enter');
+        try { await until(async () => (await page.locator('#assist .svbox').count()) > n0, '현황 카드가 안 뜸', 15000); }
+        catch (e){ fail('현황 카드가 안 뜸: ' + text + ' / 마지막 말풍선: ' + (await page.locator('#assist .abub').last().innerText().catch(() => '?')).slice(0, 200)); }
+        return { c:await page.evaluate(i => window.__mock.samples[i], before), box:page.locator('#assist .svbox').last() };
+      };
+      const { c, box } = await ask(CO + ' 뭐가 남았어?');
+      for (const t of ['과제 현황 규칙', '"status"', '짐작해서 고르지 않습니다', 'reply에 옮기지 않습니다']) if (!c.prompt.includes(t)) fail('규칙 턴에 없음: ' + t);
+      await hasText(box.locator('.svco'), CO);
+      const p = (await docsOf(page, 'projects'))[pid], cur = Math.min(p.currentStep || 1, 9);
+      if (cur < 9) await hasText(box, '현재 단계');
+      const sec = t => box.locator('.svsec', { hasText:t });
+      await hasText(sec('사업계획서 점검'), 'S/W 한도');
+      await hasText(sec('장비 도입 마감'), 'CNC 레이저 용접 시스템');
+      await hasText(sec('장비 도입 마감'), '검토 중');
+      if (cur < 9){
+        const st = p.steps[String(cur)] || {};
+        const checked = Object.entries(st.tasks || {}).filter(([k, v]) => v && k.startsWith(cur + '|')).length;
+        if (!(await sec('이번 단계 남은 업무').count()) && checked === 0) fail('체크 안 한 업무가 있는데 «이번 단계 남은 업무»가 없음');
+      }
+      await hasText(box, '보드에 입력된 값으로 만든 현황');
+      if (JSON.stringify((await docsOf(page, 'projects'))[pid]) !== doc0) fail('현황 조회로 과제가 바뀜');
+      await box.getByRole('button', { name:'과제 열기' }).click();
+      await until(async () => !(await page.locator('#assist').isVisible()), '«과제 열기» 뒤 도우미가 안 닫힘');
+      await until(() => page.locator('.drawer h2', { hasText:CO }).count(), '«과제 열기»로 과제 상세가 안 열림');
+      // 상세가 열린 채로 업체명 없이 물으면 열린 과제의 카드(목은 projectId "")
+      await page.locator('#assistBtn').dispatchEvent('click');
+      await until(() => page.locator('#assist').isVisible(), '도우미가 다시 안 열림');
+      const r2 = await ask('뭐가 남았어?');
+      await hasText(r2.box.locator('.svco'), CO);
+      if (JSON.stringify((await docsOf(page, 'projects'))[pid]) !== doc0) fail('현황 조회로 과제가 바뀜(2)');
+    } finally { await closeAssist(); await H.closeDrawer(page); }
   });
   await run.step('C2-32', async () => {
     // 화면 구성: 위 탭 7개(묶음) + 보기 전환 칩 · 기관별 보기에서 담당자 펼침·검색 강조 · 통합 검색으로 담당자 상세

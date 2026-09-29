@@ -1148,7 +1148,7 @@ export async function case2(run){
       if (await more.isVisible()) fail('다시 눌러도 설명이 안 접힘');
       if ((await expanded()).length) fail('접었는데 눌린 버튼이 남음');
       await btn('예정일 잡기').click();
-      await hasText(more, '캘린더에 등록');
+      for (const t of ['캘린더에 등록', '캘린더 날짜 수정', '구글 캘린더에 추가', '단계 메모로도 저장']) await hasText(more, t);
       const s0 = await page.evaluate(() => window.__mock.samples.length), b0 = await page.locator('#assist .abub').count();
       await page.locator('#as-input').fill('');
       await more.getByRole('button', { name:'예시 넣기' }).click();

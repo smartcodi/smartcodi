@@ -1418,6 +1418,10 @@ export async function case4(run, { mobilePage }){
   });
   await run.step('C4-05', async () => {
     await H.openStep(mp, CO, 1);
+    // 역할별 담당자: 휴대폰에서 라벨 위·내용 아래 전체 폭(.crow.m 70px 열에 눌리던 버그)
+    const cw = await mp.evaluate(() => [...document.querySelectorAll('.crow.m .cbody')].map(n => n.getBoundingClientRect().width));
+    const vw = await mp.evaluate(() => window.innerWidth);
+    if (!cw.length || cw.some(w => w < vw / 2)) fail('역할별 담당자 칸이 좁음: ' + cw.map(Math.round).join(',') + ' / 화면 ' + vw);
     const keys = Object.keys(D1);
     const fs = await mp.locator(`#dg-${pid}-1-0`).evaluate(n => getComputedStyle(n).fontSize);
     if (fs !== '16px') fail('입력칸 글자 ' + fs);

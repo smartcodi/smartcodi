@@ -264,6 +264,9 @@ main{flex:1 1 auto;overflow:auto;padding:14px 16px 18px;-webkit-overflow-scrolli
 @media (max-width:640px){ .qitem select,.qitem input[type=number]{font-size:16px} }
 .dgbox .dgval{white-space:pre-wrap;word-break:break-word;padding-left:20px}
 .dgbox .qitem.dgnone{opacity:.6}
+.pgbox .pgsaid{padding-left:20px;color:var(--ink-2);word-break:break-word}
+.pgbox .qitem.pgdone{opacity:.6}
+.pgbox .qitem.pgdone .pgsaid{padding-left:0}
 .svbox .svco{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding-bottom:6px;border-bottom:1px solid var(--line-soft)}
 .svbox .svco b{font-size:15px}
 .svbox .svline{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12px;padding:5px 0}
@@ -3383,9 +3386,10 @@ function cardBtn(){
    · action "register" = 사용자가 등록하라고 함 → 마지막 명함의 «등록 창 열기»와 같은 동작. 저장은 사람이 창에서 한다.
    · quote = 견적서 값(PDF는 보드가 글자를 뽑아 보냄) → 말풍선에 quoteReview(공급기업·과제·품목 표) → «선택한 N건 등록»을 사람이 누른다.
    · action "status" + projectId = 과제 한 건 현황 → 말풍선에 statusCard(보드가 과제 데이터로 만든 읽기 전용 카드 + «과제 열기»).
+   · progress = 방문 결과로 끝낸 업무·산출물·완료일 제안 → 말풍선에 progressReview → «선택한 항목 체크»를 사람이 누른다. 단계 상태는 안 바꾼다.
    대화·이미지·PDF는 이 화면 메모리에만 있고 저장하지 않는다. 첨부는 그 턴에만 보낸다(이전 내용은 명함·견적서 값으로 이어진다).
-   명함·견적서 등록, 양식 초안, 현장진단표, 과제 한 건 현황 외의 요청은 못 한다고 답하게 한다. 누른 사람의 Claude 사용량을 쓴다. */
-const assist = { open:false, turns:[], card:null, lastReview:null, quote:null, diag:null, lastKind:'', imgs:[], pdfs:[], busy:null, maxImg:0, types:[], n:0 };
+   명함·견적서 등록, 양식 초안, 현장진단표, 과제 한 건 현황, 방문 결과 체크 외의 요청은 못 한다고 답하게 한다. 누른 사람의 Claude 사용량을 쓴다. */
+const assist = { open:false, turns:[], card:null, lastReview:null, quote:null, diag:null, progress:null, lastKind:'', imgs:[], pdfs:[], busy:null, maxImg:0, types:[], n:0 };
 const QUOTE_TEXT_MAX = 8000;   // 견적서 PDF 텍스트 상한(자) — 한글 1자 = 3바이트라 규칙·목록과 함께 요청 64KiB 안
 const isPdf = f => !!f && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''));
 let sampleState = 'pending';   // use('sample') 결과: pending → ready | none
@@ -3396,13 +3400,21 @@ function assistRules(){
   const projs = [...state.projects.entries()].slice(0, 100).map(([id, p]) => '- ' + id + ' | ' + p.company + ' | ' + p.cycle + ' | ' + curStepName(p));
   const open = state.openId && state.projects.get(state.openId);
   return [
-    '[도우미] 당신은 «소공인 스마트제조 코디 보드»의 도우미입니다. 할 수 있는 일은 다섯 가지입니다.',
+    '[도우미] 당신은 «소공인 스마트제조 코디 보드»의 도우미입니다. 할 수 있는 일은 여섯 가지입니다.',
     '  (1) 명함(사진·텍스트)을 읽어 기관·담당자 등록 창을 채워 주기',
     '  (2) 과제의 수행일지(1~4차)·사업계획서·결과보고서 초안 쓰기 — 보드 데이터와 사용자가 대화로 알려 준 내용만 근거로',
     '  (3) 견적서(PDF 텍스트·사진)를 읽어 장비·도입 장비(자산) 등록 표를 만들어 주기',
     '  (4) 방문 메모를 그 차수 현장진단표 항목별로 나눠 주기',
     '  (5) 과제 한 건의 현황(현재 단계·다음 예정·남은 업무·미수집 서명·회신 대기·점검 문제) 보여 주기 — 내용은 보드가 과제 데이터로 카드를 만듭니다',
-    '저장은 사람이 합니다(등록 창·«단계 산출물로 등록»·«선택한 N건 등록»·«선택한 N칸을 진단표에 넣기» 버튼). 당신이 저장·등록·제출을 마쳤다고 말하지 마세요.',
+    '  (6) 방문·미팅 결과를 들으면 그 단계에서 끝낸 업무·산출물 체크와 완료일을 제안하기',
+    '저장은 사람이 합니다(등록 창·«단계 산출물로 등록»·«선택한 N건 등록»·«선택한 N칸을 진단표에 넣기»·«선택한 항목 체크» 버튼). 당신이 저장·등록·제출·체크를 마쳤다고 말하지 마세요.',
+    '방문 결과 체크 규칙:',
+    '- 사용자가 방문·미팅·작업을 마친 결과를 말하면(«2차 방문 오늘 끝남. 개선과제 도출했고 대표 서명 받음») progress를 채웁니다. projectId = [과제 목록]의 id(업체명 → [지금 열린 과제], 모르면 ""로 두고 reply로 되묻기), step = 단계 번호 1~8(«N차 방문»은 1차 = 1, 2차 = 2, 3차 = 7, 4차 = 8. 모르면 0으로 두고 되묻기).',
+    '- tasks·docs에는 [단계 업무·산출물]의 그 단계 문구를 글자 그대로 씁니다(한 글자라도 다르면 보드가 버립니다). said = 그 항목이 끝났다는 근거인 사용자 말을 원문 그대로 짧게 따옴.',
+    '- 끝났다고 말한 것만 넣습니다. 미래·예정·부정형(«수행일지는 내일 씀», «서명은 아직», «다음 주에 받기로 함»)은 넣지 않고 reply에 «아직 안 끝난 것»으로 따로 말합니다. 비슷한 일을 했다고 짐작해서 넣지 않습니다.',
+    '- actual = 완료일. 사용자가 «오늘»이라고 했으면 "오늘", «어제»면 "어제", 날짜를 적었으면 YYYY-MM-DD, 날짜를 말하지 않았으면 "". 날짜를 짐작하지 않습니다.',
+    '- 단계 상태(대기·진행·완료)는 바꿀 수 없습니다. «완료로 바꿔 줘»라고 하면 과제 상세에서 직접 바꾸라고 안내합니다.',
+    '- reply에는 체크 후보 개수와 아직 안 끝난 것을 두세 줄로 말하고 «아래 카드에서 확인하고 체크를 눌러 주세요». 고치라고 하면 [현재 체크 제안]을 고친 progress 전체를 다시 줍니다. 해당 없으면 progress는 null.',
     '현장진단표 나누기 규칙:',
     '- 사용자가 방문 메모를 주며 진단표에 넣어 달라고 하거나 «N차 방문 메모»라고 하면 diag를 채웁니다. projectId = [과제 목록]의 id(업체명 → [지금 열린 과제], 모르면 "" 로 두고 reply로 되묻기), round = 차수 1~4(1차 = 1단계, 2차 = 2단계, 3차 = 7단계, 4차 = 8단계. 모르면 0으로 두고 되묻기).',
     '- items의 키는 [현장진단표 항목]의 그 차수 항목명을 글자 그대로 씁니다. 메모에 적힌 것만 해당 항목에 옮깁니다. 메모에 없는 항목은 넣지 않습니다(빈칸).',
@@ -3438,15 +3450,18 @@ function assistRules(){
     '- 사용자가 명함을 주면 card를 채우고, reply에 읽은 요지(기관·유형 추정·이름 직함·연락처)를 두세 줄로 말한 뒤 «등록 창을 열까요?»라고 묻습니다.',
     '- 사용자가 값을 고치라고 하면 [현재 명함]을 고친 card 전체를 다시 줍니다. 고칠 게 없으면 card는 null.',
     '- 사용자가 등록하라고(«네», «등록해 줘» 등) 하면 action "register", card는 null(또는 고친 전체). 명함이 아직 없으면 명함을 달라고 합니다.',
-    '- 명함·견적서 등록, 양식 작성, 현장진단표 나누기, 과제 한 건 현황 외의 요청(여러 과제 조회·메일 보내기 등)은 아직 못 한다고 짧게 안내합니다.',
+    '- 명함·견적서 등록, 양식 작성, 현장진단표 나누기, 과제 한 건 현황, 방문 결과 체크 외의 요청(여러 과제 조회·메일 보내기 등)은 아직 못 한다고 짧게 안내합니다.',
     '- 아래 [보드의 기존 기관]에 같은 기관이 있으면 reply에 알려 주세요(기존 기관에 담당자만 추가할 수 있음).',
     '답은 JSON 객체 하나: {"reply":"…","card":{"org":"","orgType":"","orgTypeWhy":"","name":"","title":"","mobile":"","tel":"","email":"","kakao":"","address":"","addressDetail":"","website":"","other":""} 또는 null,'
       + '"quote":{"supplier":{"name":"","tel":"","address":"","addressDetail":"","bizNo":""},"to":"","date":"","number":"","vat":"","totals":{"supply":"","vat":"","total":""},'
       + '"items":[{"kind":"","kindWhy":"","name":"","model":"","spec":"","unit":"","unitRaw":"","qty":"","unitPrice":"","amount":"","note":""}]} 또는 null,'
-      + '"diag":{"projectId":"","round":1,"items":{"항목명":"값"}} 또는 null,"action":"none"|"register"|"draft"|"status","projectId":"","formId":""}',
+      + '"diag":{"projectId":"","round":1,"items":{"항목명":"값"}} 또는 null,'
+      + '"progress":{"projectId":"","step":2,"tasks":[{"task":"","said":""}],"docs":[{"doc":"","said":""}],"actual":""} 또는 null,"action":"none"|"register"|"draft"|"status","projectId":"","formId":""}',
     '', '[양식 목록]', ...DRAFT_FORMS().map(f => '- ' + f.id + ' | ' + f.name + ' | ' + f.step + '단계'),
     '', '[현장진단표 항목] 차수 | 항목명 | 작성 안내 (4차는 3차와 같은 항목)',
     ...[1, 2, 3].flatMap(r => DIAG[r].map(([k, g]) => r + '차 | ' + k + ' | ' + g)),
+    '', '[단계 업무·산출물] 단계 | 업무(역할) 또는 산출물 | 문구',
+    ...STEPS.flatMap(s => [...ROLE_ORDER.flatMap(r => (s.tasks[r] || []).map(x => s.n + ' | 업무(' + ROLES[r].label + ') | ' + x)), ...s.docs.map(d => s.n + ' | 산출물 | ' + d)]),
     '', '[과제 목록] id | 업체 | 차수 | 현재 단계', ...(projs.length ? projs : ['(없음)']),
     '', '[지금 열린 과제] ' + (open ? state.openId + ' | ' + open.company + ' | ' + open.cycle : '없음'),
     '', '[보드의 기존 기관]', ...(orgs.length ? orgs : ['(없음)']),
@@ -3489,7 +3504,8 @@ async function assistSend(){
   const wait = assistBubble('bot', pdfs.length ? 'PDF 읽는 중…' : '읽는 중…');
   const ctl = new AbortController(); assist.busy = ctl; assist.stop.hidden = false; assist.send.disabled = true;
   const cur = '[현재 명함] ' + (assist.card ? JSON.stringify(assist.card) : '없음') + '\n[현재 견적서] ' + (assist.quote ? JSON.stringify(assist.quote) : '없음')
-    + '\n[현재 진단표 제안] ' + (assist.diag ? JSON.stringify({ projectId:assist.diag.projectId, round:assist.diag.round, items:assist.diag.items }) : '없음');
+    + '\n[현재 진단표 제안] ' + (assist.diag ? JSON.stringify({ projectId:assist.diag.projectId, round:assist.diag.round, items:assist.diag.items }) : '없음')
+    + '\n[현재 체크 제안] ' + (assist.progress ? JSON.stringify({ projectId:assist.progress.projectId, step:assist.progress.step, tasks:assist.progress.tasks, docs:assist.progress.docs, actual:assist.progress.actual }) : '없음');
   const hist = assist.turns.slice(-ASSIST_TURNS);
   try {
     // 견적서 PDF: 글자를 뽑아 보낸다. 글자 없는 PDF(스캔본)는 사진을 보낼 수 있는 화면에서만 쪽 이미지로
@@ -3541,12 +3557,27 @@ async function assistSend(){
       if (pid) srev = statusCard(pid);
       else snote = '어느 과제인지 모르겠습니다. 업체명과 차수를 말해 주거나 과제 상세를 연 채로 다시 물어 주세요.';
     }
-    const parts = [rev, qrev, drev, srev].filter(Boolean);
+    // 방문 결과 → 끝낸 업무·산출물·완료일 제안. 과제·단계를 모르면 카드 없이 되묻는다
+    let prev = null, pnote = '';
+    if (r?.progress && typeof r.progress === 'object'){
+      const g = normProgress(r.progress);
+      const pid = state.projects.has(g.projectId) ? g.projectId : !g.projectId && state.openId && state.projects.has(state.openId) ? state.openId : '';
+      if (!pid) pnote = '어느 과제의 방문 결과인지 모르겠습니다. 업체명과 차수를 말해 주거나 과제 상세를 연 채로 다시 보내 주세요.';
+      else if (!g.step) pnote = '몇 단계(몇 차 방문)의 결과인지 알려 주세요.';
+      else {
+        // 근거 대조용 원문 = 이번 말. 같은 과제·단계를 대화로 고치는 중이면 앞 말에 이어 붙인다
+        const same = assist.progress && assist.progress.projectId === pid && assist.progress.step === g.step;
+        assist.progress = { projectId:pid, step:g.step, tasks:g.tasks.map(x => x.text), docs:g.docs.map(x => x.text), actual:g.actualRaw, memo:same ? assist.progress.memo + ' / ' + said : said };
+        prev = progressReview(g, pid, assist.progress.memo, 'ap-' + (++assist.n));
+      }
+    }
+    const parts = [rev, qrev, drev, srev, prev].filter(Boolean);
     let extra = parts[0] || null;
     if (parts.length > 1){ extra = el('div'); extra.append(...parts); }
     assistBubble('bot', reply, extra);
     if (dnote) assistBubble('sys', dnote);
     if (snote) assistBubble('sys', snote);
+    if (pnote) assistBubble('sys', pnote);
     if (r?.action === 'register'){
       if (assist.lastKind === 'quote') assistBubble('sys', '견적서는 위 표에서 공급기업·과제·품목을 확인하고 «선택한 … 등록»을 직접 눌러 주세요.');
       else if (!assist.lastReview) assistBubble('sys', '아직 읽은 명함이 없습니다. 명함 사진이나 텍스트를 먼저 주세요.');
@@ -3963,12 +3994,118 @@ function statusCard(pid){
   bar.append(go); box.append(bar);
   return box;
 }
+/* ---------- 도우미 방문 결과 체크: 말한 결과 → 그 단계 STEPS 문구와 글자 그대로 맞는 업무·산출물 + 완료일 제안 → 검토 카드 → «선택한 항목 체크»(사람) ----------
+   키 = "단계|역할|task문구"·docs[산출물명](doc/단계_역할_정본.md 6절). 미래·부정형 근거·말에 없는 근거·기존 완료일은 선택 해제로 시작.
+   단계 상태(status)·currentStep은 절대 건드리지 않는다(완료로 바꾸기는 사람이 과제 상세에서). */
+const PG_NOT_DONE = /(내일|모레|다음\s*(주|달|번|방문|에)|나중|예정|아직|하겠|할게|할\s*것|해야|받아야|써야|못\s*(했|받|썼|함)|안\s*(했|받|썼|됨|함)|않았|않음|미완|미정)/;
+function normProgress(r){
+  const step = [1, 2, 3, 4, 5, 6, 7, 8].includes(Number(r?.step)) ? Number(r.step) : 0;
+  const s = step ? STEPS[step - 1] : null;
+  const tasks = [], docs = [], dropped = [];
+  const arr = v => Array.isArray(v) ? v : [];
+  for (const x of arr(r?.tasks)){
+    const text = String((typeof x === 'object' ? x?.task : x) ?? '').trim(), said = String((typeof x === 'object' && x?.said) || '').trim();
+    if (!text) continue;
+    const role = s && ROLE_ORDER.find(k => (s.tasks[k] || []).includes(text));   // 한 단계 안에서 task 문구는 역할끼리 겹치지 않는다
+    if (!role) dropped.push(text);
+    else if (!tasks.some(t => t.text === text)) tasks.push({ text, role, said, key:step + '|' + role + '|' + text });
+  }
+  for (const x of arr(r?.docs)){
+    const text = String((typeof x === 'object' ? x?.doc : x) ?? '').trim(), said = String((typeof x === 'object' && x?.said) || '').trim();
+    if (!text) continue;
+    if (!s || !s.docs.includes(text)) dropped.push(text);
+    else if (!docs.some(d => d.text === text)) docs.push({ text, said });
+  }
+  const actualRaw = String(r?.actual || '').trim();
+  let actual = actualRaw === '오늘' ? today() : actualRaw === '어제' ? addDays(today(), -1) : '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(actualRaw) && isoDate(new Date(actualRaw + 'T00:00:00')) === actualRaw) actual = actualRaw;
+  return { projectId:String(r?.projectId || ''), step, tasks, docs, dropped, actual, actualRaw };
+}
+function progressReview(g, pid, memo, idp){
+  const p = state.projects.get(pid), key = String(g.step), s = STEPS[g.step - 1], st = p.steps?.[key] || {};
+  const box = el('div','cardbox pgbox');
+  box.append(kvBlock([['과제', projLabel(p)], ['단계', s.n + '. ' + s.name + ' · 지금 «' + (STATUS[st.status] || '대기') + '»']]));
+  const memoFlat = flatText(memo), list = el('div','qitems'), rows = [];
+  const add = (kind, label, said, done, v, extra) => {
+    const card = el('div','qitem');
+    list.append(card);
+    if (done){
+      card.classList.add('pgdone');
+      card.append(el('div','qname', label), el('div','qsub', kind === 'date' ? '이미 입력됨' : '이미 체크됨'));
+      if (said) card.append(el('div','pgsaid', '«' + said + '»'));
+      return;
+    }
+    const warns = [...(extra || [])];
+    if (kind !== 'date'){
+      if (!said) warns.push('근거 문구 없음 — 끝났다고 말했는지 확인');
+      else {
+        if (!memoFlat.includes(flatText(said))) warns.push('말한 문장에 없는 근거 — 확인');
+        if (PG_NOT_DONE.test(said)) warns.push('아직 안 끝난 일로 보임(미래·부정형) — 끝났으면 체크');
+      }
+    }
+    const chk = document.createElement('input'); chk.type = 'checkbox'; chk.id = idp + '-' + rows.length; chk.checked = !warns.length;
+    const head = el('label','qhead'); head.htmlFor = chk.id;
+    head.append(chk, el('span','qname', label));
+    card.append(head);
+    if (said) card.append(el('div','pgsaid', '«' + said + '»'));
+    for (const w of warns) card.append(el('div','qwarn', w));
+    chk.addEventListener('change', () => count());
+    rows.push(Object.assign({ kind, chk }, v));
+  };
+  for (const t of g.tasks) add('task', ROLES[t.role].label + ': ' + t.text, t.said, !!st.tasks?.[t.key], { key:t.key });
+  for (const d of g.docs) add('doc', '산출물: ' + d.text, d.said, !!st.docs?.[d.text], { key:d.text });
+  const old = String(st.actual || '');
+  if (g.actual){
+    const w = [];
+    if (old && old !== g.actual) w.push('기존 완료일 ' + withDow(old) + ' — 덮어쓰려면 체크');
+    if (g.actual > today()) w.push('오늘 이후 날짜 — 확인');
+    add('date', '완료일: ' + withDow(g.actual), '', old === g.actual, { v:g.actual, old }, w);
+  }
+  box.append(list);
+  if (!g.tasks.length && !g.docs.length) box.append(el('div','rnote', '이 단계의 업무·산출물 문구와 맞는 항목이 없습니다.'));
+  if (!g.actual) box.append(el('div','rnote', g.actualRaw ? '완료일 «' + g.actualRaw + '»은 날짜로 읽지 못해 비워 둡니다.' : '완료일: 날짜를 말하지 않아 비워 둡니다' + (old ? ' (기존 ' + old + ' 그대로)' : '') + '.'));
+  if (g.dropped.length) box.append(el('div','rnote', s.n + '단계 문구와 맞지 않아 뺀 것: ' + g.dropped.join(', ')));
+  box.append(el('div','rnote', '끝났다고 말한 것만 제안합니다. 미래·부정형이거나 근거가 말에 없는 항목, 기존 완료일은 선택 해제로 시작합니다. 단계 상태는 바꾸지 않습니다 — 완료로 바꾸려면 과제 상세에서 직접 고르세요.'));
+  const bar = el('div','sendbar'), go = el('button','btn primary'), mb = el('button','btn ghost','단계 메모로도 저장'), op = el('button','btn ghost','과제 열기');
+  mb.title = '말한 방문 결과 원문을 ' + key + '단계 메모로 남깁니다';
+  bar.append(go, mb, op); box.append(bar);
+  const count = () => { const n = rows.filter(r => r.chk.checked).length; go.textContent = '선택한 항목 체크 (' + n + ')'; go.disabled = !n || !writable || go.dataset.done === '1'; };
+  const stepOf = np => np.steps[key] = np.steps[key] || { status:'todo', planned:'', actual:'', tasks:{}, docs:{}, notes:[] };
+  go.addEventListener('click', () => {
+    const np = structuredClone(state.projects.get(pid)), t = stepOf(np);
+    t.tasks = t.tasks || {}; t.docs = t.docs || {};
+    let nt = 0, nd = 0, date = '', skipped = false;
+    for (const r of rows.filter(r => r.chk.checked)){
+      if (r.kind === 'task'){ if (!t.tasks[r.key]){ t.tasks[r.key] = true; nt++; } }
+      else if (r.kind === 'doc'){ if (!t.docs[r.key]){ t.docs[r.key] = true; nd++; } }
+      else if (String(t.actual || '') === r.old){ t.actual = r.v; date = r.v; }   // 카드를 띄운 뒤 누가 완료일을 고쳤으면 덮지 않는다
+      else skipped = true;
+    }
+    if (nt || nd || date) save(pid, np);
+    go.dataset.done = '1';
+    for (const r of rows) r.chk.disabled = true;
+    count(); go.textContent = '체크함';
+    assistBubble('sys', key + '단계: 업무 ' + nt + '개·산출물 ' + nd + '개를 체크했습니다' + (date ? ', 완료일 ' + withDow(date) + '을 넣었습니다' : '') + (skipped ? ' — 완료일은 그사이 바뀌어 넣지 않았습니다' : '')
+      + '. 단계 상태(«' + (STATUS[np.steps[key].status] || '대기') + '»)는 바꾸지 않았습니다 — 완료로 바꾸려면 과제 상세에서 직접 고르세요.');
+  });
+  mb.addEventListener('click', () => {
+    const np = structuredClone(state.projects.get(pid)), t = stepOf(np);
+    t.notes = t.notes || [];
+    t.notes.push(Object.assign({ ts:new Date().toISOString(), text:'(방문 결과) ' + memo }, me ? { by:me } : {}));
+    save(pid, np); mb.disabled = true; mb.textContent = '메모로 저장됨';
+  });
+  mb.disabled = !writable;
+  op.addEventListener('click', () => { assistToggle(false); openStep(pid, g.step); });
+  if (!writable) box.append(el('div','rnote','이 화면은 저장 권한이 없어 체크할 수 없습니다.'));
+  count();
+  return box;
+}
 function assistBuild(){
   const p = el('aside','assist'); p.id = 'assist'; p.hidden = true;
   p.setAttribute('role','complementary'); p.setAttribute('aria-label','보드 도우미');
   const hd = el('div','ahead');
   const nw = el('button','btn ghost','새 대화'), cx = el('button','btn ghost','닫기');
-  nw.addEventListener('click', () => { assist.busy?.abort(); assist.turns = []; assist.card = null; assist.lastReview = null; assist.quote = null; assist.diag = null; assist.lastKind = ''; assist.imgs = []; assist.pdfs = []; assistThumbs(); assist.log.replaceChildren(); assistIntro(); });
+  nw.addEventListener('click', () => { assist.busy?.abort(); assist.turns = []; assist.card = null; assist.lastReview = null; assist.quote = null; assist.diag = null; assist.progress = null; assist.lastKind = ''; assist.imgs = []; assist.pdfs = []; assistThumbs(); assist.log.replaceChildren(); assistIntro(); });
   cx.addEventListener('click', () => assistToggle(false));
   hd.append(el('b', null, '보드 도우미'), el('span','grow'), nw, cx);
   const log = el('div','alog'); assist.log = log;
@@ -3994,7 +4131,7 @@ function assistBuild(){
   assistCaps();
 }
 function assistIntro(){
-  assistBubble('bot', '할 수 있는 일은 다섯 가지입니다.\n① 명함 등록 — 명함 사진을 붙여 넣거나(Ctrl+V) 명함 내용을 붙여 넣고 «기관이랑 담당자 등록해 줘»\n② 양식 초안 — «대한정밀 2차 수행일지 써 줘. 오늘 방문에서 … 논의함»처럼 말하면 수행일지(1~4차)·사업계획서·결과보고서 초안을 써서 보여 드립니다. «단계 산출물로 등록»을 누르면 그 단계에 버전으로 남습니다.\n③ 견적서 등록 — 📎로 견적서 PDF를 첨부하고 «이 견적서 읽어 줘». 표에서 공급기업·과제·품목을 확인하고 «선택한 N건 등록»을 누르면 장비와 도입 장비(자산, 검토 중)로 들어갑니다.\n④ 현장진단표 — «대한정밀 1차 방문 메모: 대표가 "불량이 하루 30개쯤"이라고 함, 기록은 종이 일지…»처럼 메모를 붙여 넣으면 그 차수 진단표 항목별로 나눠 보여 드립니다. «선택한 N칸을 진단표에 넣기»를 누르면 들어갑니다(기존 값은 덮어쓰지 않게 해제로 시작).\n⑤ 과제 현황 — «대한정밀 뭐가 남았어?»처럼 물으면 현재 단계·다음 예정·남은 업무·미수집 서명·회신 대기·점검 문제를 보드 값으로 카드에 보여 드립니다. «과제 열기»로 상세로 갑니다.\n저장·등록은 직접 누르시면 됩니다. 보드와 대화에 없는 내용은 «미확인»으로 둡니다.\n· 사진·PDF는 저장하지 않습니다 · 대화할 때마다 이 계정의 Claude 사용량을 씁니다');
+  assistBubble('bot', '할 수 있는 일은 여섯 가지입니다.\n① 명함 등록 — 명함 사진을 붙여 넣거나(Ctrl+V) 명함 내용을 붙여 넣고 «기관이랑 담당자 등록해 줘»\n② 양식 초안 — «대한정밀 2차 수행일지 써 줘. 오늘 방문에서 … 논의함»처럼 말하면 수행일지(1~4차)·사업계획서·결과보고서 초안을 써서 보여 드립니다. «단계 산출물로 등록»을 누르면 그 단계에 버전으로 남습니다.\n③ 견적서 등록 — 📎로 견적서 PDF를 첨부하고 «이 견적서 읽어 줘». 표에서 공급기업·과제·품목을 확인하고 «선택한 N건 등록»을 누르면 장비와 도입 장비(자산, 검토 중)로 들어갑니다.\n④ 현장진단표 — «대한정밀 1차 방문 메모: 대표가 "불량이 하루 30개쯤"이라고 함, 기록은 종이 일지…»처럼 메모를 붙여 넣으면 그 차수 진단표 항목별로 나눠 보여 드립니다. «선택한 N칸을 진단표에 넣기»를 누르면 들어갑니다(기존 값은 덮어쓰지 않게 해제로 시작).\n⑤ 과제 현황 — «대한정밀 뭐가 남았어?»처럼 물으면 현재 단계·다음 예정·남은 업무·미수집 서명·회신 대기·점검 문제를 보드 값으로 카드에 보여 드립니다. «과제 열기»로 상세로 갑니다.\n⑥ 방문 결과 체크 — «대한정밀 2차 방문 오늘 끝남. 개선과제 도출했고 대표 서명 받음»처럼 말하면 끝낸 업무·산출물과 완료일을 카드로 보여 드립니다. «선택한 항목 체크»를 누르면 체크됩니다. 끝났다고 말한 것만 제안하고, 단계 상태(완료로 바꾸기)는 과제 상세에서 직접 하세요.\n저장·등록은 직접 누르시면 됩니다. 보드와 대화에 없는 내용은 «미확인»으로 둡니다.\n· 사진·PDF는 저장하지 않습니다 · 대화할 때마다 이 계정의 Claude 사용량을 씁니다');
 }
 /** 이 화면이 Claude·사진을 쓸 수 있는지 확인해 알린다(말없이 숨기지 않는다). sampleState: pending → ready | none */
 function assistCaps(){

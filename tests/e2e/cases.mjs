@@ -838,6 +838,74 @@ export async function case2(run){
       if (JSON.stringify((await docsOf(page, 'projects'))[pid]) !== doc0) fail('현황 조회로 과제가 바뀜(2)');
     } finally { await closeAssist(); await H.closeDrawer(page); }
   });
+  await run.step('C2-36', async () => {
+    // 방문 결과 → 끝낸 업무·산출물·완료일 제안 카드 → «선택한 항목 체크». 미래형 근거·기존 완료일은 해제, 이미 체크된 업무는 표시만, 단계 상태·currentStep 그대로
+    try {
+      const id = await H.openStep(page, CO, 2);
+      const t1 = stepBody(page, 2).locator('.rolegrp label.chk', { hasText:'개선과제 공유 및 논의' }).locator('input');
+      if (!(await t1.isChecked())) await t1.check();
+      await page.locator(`#d-${id}-2-actual`).fill('2026-10-01');
+      await until(async () => (await stepOf(2)).actual === '2026-10-01' && (await stepOf(2)).tasks?.['2|coord|개선과제 공유 및 논의'] === true, '사전 준비(체크·완료일) 저장 안 됨');
+      await H.closeDrawer(page);
+      const pid = await projectId(page, CO);
+      const p0 = (await docsOf(page, 'projects'))[pid], st0 = p0.steps['2'];
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const say = async text => {
+        const before = await page.evaluate(() => window.__mock.samples.length);
+        const n0 = await page.locator('#assist .pgbox').count();
+        await page.locator('#as-input').fill(text); await page.locator('#as-input').press('Enter');
+        try { await until(async () => (await page.locator('#assist .pgbox').count()) > n0, '체크 카드가 안 뜸', 15000); }
+        catch (e){ fail('체크 카드가 안 뜸: ' + text + ' / 마지막 말풍선: ' + (await page.locator('#assist .abub').last().innerText().catch(() => '?')).slice(0, 200)); }
+        return { c:await page.evaluate(i => window.__mock.samples[i], before), box:page.locator('#assist .pgbox').last() };
+      };
+      const { c, box } = await say(CO + ' 2차 방문 오늘 끝남. 개선과제 도출했고 대표 서명 받음. 수행일지는 내일 씀.');
+      for (const t of ['방문 결과 체크 규칙', '[단계 업무·산출물]', '2 | 업무(코디네이터) | 개선과제 도출', '2 | 산출물 | 2차 방문 확인 서명', '끝났다고 말한 것만', '[현재 체크 제안] 없음'])
+        if (!c.prompt.includes(t)) fail('규칙 턴에 없음: ' + t);
+      await hasText(box, '2. 2차 방문');
+      const item = t => box.locator('.qitem', { hasText:t });
+      const on = async t => item(t).locator('input[type=checkbox]').isChecked();
+      await hasText(item('개선과제 공유 및 논의'), '이미 체크됨');
+      if (await item('개선과제 공유 및 논의').locator('input').count()) fail('이미 체크된 업무에 체크박스가 있음');
+      await hasText(item('수행일지 작성'), '미래·부정형');
+      if (await on('수행일지 작성')) fail('미래형 근거(«내일 씀») 업무가 선택됨');
+      await hasText(item('완료일'), '기존 완료일 2026-10-01');
+      if (await on('완료일')) fail('기존 완료일이 있는데 새 완료일이 선택됨');
+      for (const t of ['코디네이터: 개선과제 도출', '서명 및 확인', '산출물: 2차 방문 확인 서명']) if (!(await on(t))) fail('선택 안 됨: ' + t);
+      await hasText(box, '맞지 않아 뺀 것: 개선과제를 도출함, 수행일지 2차');
+      await box.getByRole('button', { name:'선택한 항목 체크 (3)' }).click();
+      await hasText(page.locator('#assist .abub.sys').last(), '업무 2개·산출물 1개를 체크했습니다');
+      await until(async () => (await stepOf(2)).docs?.['2차 방문 확인 서명'] === true, '산출물 체크 저장 안 됨');
+      const p1 = (await docsOf(page, 'projects'))[pid], st1 = p1.steps['2'];
+      if (st1.tasks['2|coord|개선과제 도출'] !== true || st1.tasks['2|coord|서명 및 확인'] !== true) fail('업무 체크: ' + JSON.stringify(st1.tasks));
+      if (st1.tasks['2|coord|수행일지 작성']) fail('미래형 업무가 체크됨');
+      if (st1.actual !== '2026-10-01') fail('기존 완료일이 바뀜: ' + st1.actual);
+      if (st1.status !== st0.status || p1.currentStep !== p0.currentStep) fail('단계 상태·현재 단계가 바뀜: ' + st0.status + '→' + st1.status + ', ' + p0.currentStep + '→' + p1.currentStep);
+      if (!(await box.getByRole('button', { name:'체크함' }).isDisabled())) fail('체크 뒤 버튼이 다시 눌림');
+      await box.getByRole('button', { name:'단계 메모로도 저장' }).click();
+      await until(async () => ((await stepOf(2)).notes || []).some(x => x.text.startsWith('(방문 결과)') && x.text.includes('대표 서명 받음')), '방문 결과가 단계 메모로 안 남음');
+      // 완료일이 비어 있으면 «오늘»을 보드가 today()로 바꿔 선택한 채로 제안, 이미 체크된 항목은 표시만
+      await closeAssist();
+      await H.openStep(page, CO, 2);
+      await page.locator(`#d-${id}-2-actual`).fill('');
+      await until(async () => !(await stepOf(2)).actual, '완료일 비우기 저장 안 됨');
+      await H.closeDrawer(page);
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const r2 = await say(CO + ' 2차 방문 오늘 끝남. 개선과제 도출했고 대표 서명 받음.');
+      const today = await page.evaluate('today()');
+      await hasText(r2.box.locator('.qitem', { hasText:'완료일' }), today);
+      if (!(await r2.box.locator('.qitem', { hasText:'완료일' }).locator('input').isChecked())) fail('빈 완료일에 «오늘» 제안이 선택 안 됨');
+      await hasText(r2.box.locator('.qitem', { hasText:'개선과제 도출' }).first(), '이미 체크됨');
+      await r2.box.getByRole('button', { name:'선택한 항목 체크 (1)' }).click();
+      await until(async () => (await stepOf(2)).actual === today, '완료일 «오늘»이 저장 안 됨');
+      const p2 = (await docsOf(page, 'projects'))[pid];
+      if (p2.steps['2'].status !== st0.status || p2.currentStep !== p0.currentStep) fail('완료일 저장으로 단계 상태·현재 단계가 바뀜');
+      // 과제를 모르면(업체명 없음·열린 과제 없음) 카드 없이 되묻기
+      await page.locator('#as-input').fill('2차 방문 끝남. 서명 받음.'); await page.locator('#as-input').press('Enter');
+      await hasText(page.locator('#assist .abub.sys').last(), '어느 과제의 방문 결과인지');
+    } finally { await closeAssist(); await H.closeDrawer(page); }
+  });
   await run.step('C2-32', async () => {
     // 화면 구성: 위 탭 7개(묶음) + 보기 전환 칩 · 기관별 보기에서 담당자 펼침·검색 강조 · 통합 검색으로 담당자 상세
     await H.closeDrawer(page);

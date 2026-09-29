@@ -175,6 +175,22 @@
               { kind:'sw', kindWhy:'(목) 월 구독 SW', name:'[테스트] 견적 MES', model:'QM-1', spec:'', unit:'월(임차)', unitRaw:'개월', qty:3, unitPrice:400000, amount:1200000, note:'(목) 설치 교육 포함' },
             ] } };
       }
+      // 방문 결과 → 끝낸 업무·산출물 체크 제안. 일부러 섞음: 이미 체크된 업무, 미래형 근거(«내일 씀»), 문구가 다른 업무·산출물 — 보드의 걸러내기 확인용
+      if (/방문 결과|끝남|끝났/.test(last)){
+        const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));
+        const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => last.includes(co));
+        const step = { 1:1, 2:2, 3:7, 4:8 }[(last.match(/([1-4])차/) || [])[1]] || 0;
+        return { reply:'(목) 끝낸 항목 3개를 찾았습니다. 수행일지는 아직입니다. 아래 카드에서 확인하고 체크를 눌러 주세요.', card:null, quote:null, diag:null, action:'none',
+          progress:{ projectId: proj ? proj[1] : '', step, actual: /오늘/.test(last) ? '오늘' : '',
+            tasks:[
+              { task:'개선과제 공유 및 논의', said:'개선과제 공유' },
+              { task:'개선과제 도출', said:'개선과제 도출했고' },
+              { task:'서명 및 확인', said:'대표 서명 받음' },
+              { task:'수행일지 작성', said:'수행일지는 내일 씀' },
+              { task:'개선과제를 도출함', said:'개선과제 도출했고' },
+            ],
+            docs:[{ doc:'2차 방문 확인 서명', said:'대표 서명 받음' }, { doc:'수행일지 2차', said:'수행일지는 내일 씀' }] } };
+      }
       // 방문 메모 → 현장진단표(1차 항목명). 일부러 섞음: 기존 값 있는 칸(⑧), 메모에 없는 숫자(⑤ 5%), 없는 항목명(⑨) — 보드의 걸러내기 확인용
       if (/방문 메모/.test(last)){
         const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));

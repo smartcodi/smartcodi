@@ -76,8 +76,16 @@ export async function fillForm(page, values){
 export const saveModal = async page => { await modal(page).getByRole('button', { name:'저장', exact:true }).click(); };
 
 /* ---------- 탭 ---------- */
-const TAB = { board:'#tabBoard', today:'#tabToday', proj:'#tabProj', acc:'#tabAcc', con:'#tabCon', prod:'#tabProd', asset:'#tabAsset', sched:'#tabSched', act:'#tabAct', report:'#tabReport', admin:'#tabAdmin' };
-export async function tab(page, key){ await closeDrawer(page); await page.locator(TAB[key]).click(); }
+// 위 탭 = 화면 묶음(2026-09-29): 할 일(today|sched) · 기관·담당자(acc|con) · 장비·자산(prod|asset) · 보고서(report|act).
+// 묶음 버튼을 누른 뒤 보기 전환 칩(.subnav [data-key])으로 원하는 화면을 연다. 화면 key = 컨테이너 id
+const TAB = { board:'#tabBoard', today:'#tabTodo', sched:'#tabTodo', proj:'#tabProj', acc:'#tabOrg', con:'#tabOrg', prod:'#tabEq', asset:'#tabEq', report:'#tabReport', act:'#tabReport', admin:'#tabAdmin' };
+export async function tab(page, key){
+  await closeDrawer(page);
+  await page.locator(TAB[key]).click();
+  const chip = page.locator('.subnav:visible [data-key="' + key + '"]');
+  if (await chip.count()) await chip.first().click();
+  await until(() => page.locator('#' + key).isVisible(), '화면이 안 열림: ' + key);
+}
 
 /* ---------- 엔터티 생성 (화면 조작) ---------- */
 export async function addAccount(page, a){

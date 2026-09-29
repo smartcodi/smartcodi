@@ -223,6 +223,12 @@ main{flex:1 1 auto;overflow:auto;padding:14px 16px 18px;-webkit-overflow-scrolli
 .pcomment{border:1px solid var(--line);background:var(--surface-2);border-radius:6px;padding:4px 7px;font-size:12px;width:100%;min-width:140px}
 .pmsg{margin-top:6px}
 .admcard td .btn{padding:2px 8px;font-size:11.5px}
+.subnav{--rc:var(--accent);margin-bottom:-4px}
+.subnav .chip{font-size:12.5px;padding:4px 14px}
+.abtg{text-decoration:none;font-size:12px;width:16px;display:inline-block;color:var(--ink-3)}
+.rcard tr.absub td{font-size:12px;color:var(--ink-2);background:var(--surface-2);padding-top:5px;padding-bottom:5px}
+.rcard tr.absub td:first-child{padding-left:30px}
+.rcard tr.absub.hit td{background:color-mix(in oklab,var(--accent) 10%,var(--surface));color:var(--ink)}
 /* 보드 도우미 */
 #assistBtn.on{border-color:var(--accent);color:var(--accent)}
 .assist{position:fixed;top:0;right:0;bottom:0;width:min(400px,100%);z-index:42;background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -493,15 +499,11 @@ button.gcal{cursor:pointer;font-family:inherit}
     </div>
     <nav class="tabs" role="tablist">
       <button class="tab on" id="tabBoard" role="tab" aria-selected="true">보드</button>
-      <button class="tab" id="tabToday" role="tab" aria-selected="false" title="기한 경과 · 7일 내 방문 · 캘린더 미등록 · 서류 미수집 · 회신 대기">오늘</button>
+      <button class="tab" id="tabTodo" role="tab" aria-selected="false" title="지금·앞으로 할 일: 기한 경과·이번 주 예정·도입 마감·사업계획서 점검·서류·회신 + 구글 캘린더 달력">할 일</button>
       <button class="tab" id="tabProj" role="tab" aria-selected="false" title="Project — 업체 × 연도·차수">과제</button>
-      <button class="tab more" id="tabAcc" role="tab" aria-selected="false" title="Account — 소공인·코디 소속·공급기업·컨설팅사">기관</button>
-      <button class="tab more" id="tabCon" role="tab" aria-selected="false" title="Contact — 기관에 속한 사람">담당자</button>
-      <button class="tab more" id="tabProd" role="tab" aria-selected="false" title="Product — 공급기업이 제안·공급하는 H/W·S/W 모델">장비</button>
-      <button class="tab more" id="tabAsset" role="tab" aria-selected="false" title="Asset — 과제에 들여온 장비(수량·시리얼·상태)">자산</button>
-      <button class="tab" id="tabSched" role="tab" aria-selected="false">일정</button>
-      <button class="tab more" id="tabAct" role="tab" aria-selected="false">활동</button>
-      <button class="tab more" id="tabReport" role="tab" aria-selected="false">보고서</button>
+      <button class="tab more" id="tabOrg" role="tab" aria-selected="false" title="Account·Contact — 기관(소공인·코디 소속·공급기업·컨설팅사)과 소속 담당자">기관·담당자</button>
+      <button class="tab more" id="tabEq" role="tab" aria-selected="false" title="Product·Asset — 장비 카탈로그와 과제에 들여온 자산">장비·자산</button>
+      <button class="tab" id="tabReport" role="tab" aria-selected="false" title="방문 실적·기업별 진행·사업비 현황·연락 이력">보고서</button>
       <button class="tab more" id="tabAdmin" role="tab" aria-selected="false" title="보드 소유자만 — 사업계획서 체크리스트 관리" hidden>관리</button>
       <button class="tab tabmore" id="tabMore" type="button" aria-haspopup="menu" aria-expanded="false">더보기</button>
     </nav>
@@ -1452,17 +1454,43 @@ function renderQres(){
 }
 
 /* ======================= 하단 탭바 더보기 (I) ======================= */
-const MORE_TABS = [['tabAcc','acc'], ['tabCon','con'], ['tabProd','prod'], ['tabAsset','asset'], ['tabAct','act'], ['tabReport','report'], ['tabAdmin','admin']];
+/* 위 탭 = 화면 묶음. 내부 화면 key(state.tab)와 컨테이너는 그대로 두고, 여러 화면이 있는 묶음은 보기 전환 칩(subnavTo)으로 바꾼다.
+   할 일 = 목록(today) | 달력(sched) · 기관·담당자 = 기관별(acc) | 담당자 전체(con) · 장비·자산 = 장비(prod) | 자산(asset)
+   보고서 = 실적·진행·사업비(report) | 연락 이력(act) — 2026-09-29 사용자 결정(11개 탭 → 7개) */
+const TAB_GROUPS = [['tabBoard',['board']], ['tabTodo',['today','sched']], ['tabProj',['proj']], ['tabOrg',['acc','con']], ['tabEq',['prod','asset']], ['tabReport',['report','act']], ['tabAdmin',['admin']]];
+const SUB_LABELS = { today:'목록', sched:'달력', acc:'기관별', con:'담당자 전체', prod:'장비', asset:'자산', report:'실적·진행·사업비', act:'연락 이력' };
+const MORE_GROUPS = ['tabOrg','tabEq','tabAdmin'];   // 휴대폰 하단 탭바 «더보기»로 가는 묶음
+const groupOf = key => TAB_GROUPS.find(([, ks]) => ks.includes(key));
+const lastSub = {};   // 묶음 버튼 → 마지막으로 본 화면
+function goTab(btnId){
+  const g = TAB_GROUPS.find(([b]) => b === btnId);
+  state.tab = lastSub[btnId] || g[1][0];
+  toggleMore(false); render();
+}
+/** 여러 화면이 있는 묶음의 보기 전환 칩. 각 render 함수가 컨테이너를 비운 직후 부른다 */
+function subnavTo(container, key){
+  const g = groupOf(key);
+  if (!g || g[1].length < 2) return;
+  lastSub[g[0]] = key;
+  const bar = el('div','chips subnav'); bar.setAttribute('role','tablist');
+  for (const k of g[1]){
+    const b = el('button','chip' + (k === key ? ' on' : ''), SUB_LABELS[k]);
+    b.type = 'button'; b.dataset.key = k; b.setAttribute('aria-selected', String(k === key));
+    b.addEventListener('click', () => { if (state.tab !== k){ state.tab = k; render(); } });
+    bar.append(b);
+  }
+  container.append(bar);
+}
 function toggleMore(open){
   const mm = document.getElementById('moreMenu'), mb = document.getElementById('tabMore');
   const show = open === undefined ? mm.hidden : open;
   if (show){
     mm.replaceChildren();
-    for (const [btnId, key] of MORE_TABS){
+    for (const btnId of MORE_GROUPS){
       if (document.getElementById(btnId).hidden) continue;   // 관리 탭은 소유자에게만
-      const b = el('button', state.tab === key ? 'on' : null, document.getElementById(btnId).textContent);
+      const b = el('button', groupOf(state.tab)?.[0] === btnId ? 'on' : null, document.getElementById(btnId).textContent);
       b.type = 'button'; b.setAttribute('role','menuitem');
-      b.addEventListener('click', () => { state.tab = key; toggleMore(false); render(); });
+      b.addEventListener('click', () => goTab(btnId));
       mm.append(b);
     }
   }
@@ -1586,7 +1614,6 @@ const accEl = document.getElementById('acc');
 const conEl = document.getElementById('con');
 const prodEl = document.getElementById('prod');
 const assetEl = document.getElementById('asset');
-const TABS = [['tabBoard','board'], ['tabToday','today'], ['tabProj','proj'], ['tabAcc','acc'], ['tabCon','con'], ['tabProd','prod'], ['tabAsset','asset'], ['tabSched','sched'], ['tabAct','act'], ['tabReport','report'], ['tabAdmin','admin']];
 
 function el(tag, cls, text){
   const n = document.createElement(tag);
@@ -1597,15 +1624,16 @@ function el(tag, cls, text){
 
 function render(){
   const tab = state.tab;
-  for (const [btnId, key] of TABS){
-    const b = document.getElementById(btnId);
-    b.classList.toggle('on', tab === key);
-    b.setAttribute('aria-selected', String(tab === key));
+  const g = groupOf(tab);
+  for (const [btnId, keys] of TAB_GROUPS){
+    const b = document.getElementById(btnId), on = keys.includes(tab);
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
   }
-  const moreOn = MORE_TABS.find(([btnId, key]) => key === tab);
+  const moreOn = g && MORE_GROUPS.includes(g[0]) ? g[0] : null;
   const mb = document.getElementById('tabMore');
   mb.classList.toggle('on', !!moreOn);
-  mb.textContent = moreOn ? document.getElementById(moreOn[0]).textContent + ' ▴' : '더보기';
+  mb.textContent = moreOn ? document.getElementById(moreOn).textContent + ' ▴' : '더보기';
   document.getElementById('legend').hidden = tab !== 'board';
   document.getElementById('newBtn').hidden = tab !== 'board';
   boardEl.hidden  = tab !== 'board';
@@ -1984,7 +2012,7 @@ async function calRegister(r, btn){
     addActivity(r.id, { step:r.s.n, channel:'calendar', record:'auto', kind:'schedule', date:r.date,
       eventId:ev.id, htmlLink:ev.htmlLink || '', subject:summary, body:description, to:[], attachment:'' });
     calRefresh();
-    calMsg('ok', r.p.company + ' ' + r.s.n + '단계 일정을 ' + r.date + '에 등록했습니다. «활동»에 기록됐습니다.');
+    calMsg('ok', r.p.company + ' ' + r.s.n + '단계 일정을 ' + r.date + '에 등록했습니다. «보고서 → 연락 이력»에 기록됐습니다.');
   } catch (e){
     btn.disabled = false; btn.textContent = '등록';
     calMsg('bad', calError(e));
@@ -2145,53 +2173,51 @@ function calChip(it){
   return b;
 }
 
+/** 예정 일정 표(예정일·D-day·업체·단계·주관·담당·방문지·캘린더). «할 일» 목록의 이번 주·그 뒤 예정 카드에서 쓴다 */
+function schedTable(rows, emptyText){
+  const tb = document.createElement('table');
+  tb.append(headRow(['예정일','D-day','업체명','차수','단계','주관','담당','방문지','캘린더']));
+  const body = document.createElement('tbody');
+  if (!rows.length) body.append(emptyRow(9, emptyText));
+  for (const r of rows){
+    const tr = document.createElement('tr');
+    if (r.overdue) tr.className = 'overdue';
+    tr.append(td(withDow(r.date),'num'));
+    const dc = document.createElement('td');
+    dc.append(el('span','dday ' + (r.overdue ? 'over' : r.dd <= 7 ? 'soon' : 'far'), r.st.status === 'done' ? '완료' : ddayLabel(r.dd)));
+    tr.append(dc, td(r.p.company,'co'), td(r.p.cycle,'num'));
+    const sc2 = document.createElement('td');
+    const pill = el('span','vpill', r.s.n + '. ' + r.s.name);
+    pill.style.setProperty('--rc', rv(r.s.owner));
+    sc2.append(pill); tr.append(sc2);
+    tr.append(td(ROLES[r.s.owner].label), td(dash(r.p.contacts?.[r.s.owner]?.name)), visitCell(r), calCell(r));
+    body.append(tr);
+  }
+  tb.append(body);
+  const wrap = el('div','tbl-wrap'); wrap.append(tb);
+  return wrap;
+}
+function schedCard(title, rows, emptyText, note){
+  const card = el('section','rcard');
+  const hh = el('div','rhead');
+  hh.append(el('h2', null, title), el('span','n mono', rows.length + '건'), el('span','grow'), originControl());
+  card.append(hh, schedTable(rows, emptyText));
+  if (note) card.append(el('div','rnote', note));
+  return card;
+}
+
+/* «할 일 → 달력»: 구글 캘린더 월간 보기 + 구글 캘린더용 CSV + 올리는 방법. 예정 일정 표는 «할 일 → 목록»에 있다 */
 function renderSched(){
   const rows = scheduleRows();
   const t = today();
   ensureCalWatch();
   schedEl.replaceChildren();
-
+  subnavTo(schedEl, 'sched');
   schedEl.append(calendarCard(rows));
 
-  /* --- 요약 --- */
-  const sum = el('section','rcard');
-  const sh = el('div','rhead');
-  sh.append(el('h2', null, '보드 예정 일정'));
-  sh.append(el('span','n mono', '기준 ' + t));
-  sh.append(el('span','grow'));
-  const inc = el('label','tog');
-  const cb = document.createElement('input');
-  cb.type = 'checkbox'; cb.id = 'sched-done'; cb.checked = state.schedDone;
-  cb.addEventListener('change', () => { state.schedDone = cb.checked; renderSched(); });
-  inc.append(cb, document.createTextNode('완료 단계 포함'));
-  sh.append(inc);
-  sum.append(sh);
-
-  const over = rows.filter(r => r.overdue);
-  const week = rows.filter(r => !r.overdue && r.dd >= 0 && r.dd <= 7);
-  const unreg = mcp ? rows.filter(r => { const g = registeredEvent(r.p, r.s.n); return !g || g.date !== r.date; }) : [];
-  const tiles = el('div','tiles');
-  for (const [label, val, unit, c] of [
-    ['기한 경과', over.length, '건', '#c0392b'],
-    ['7일 이내', week.length, '건', 'var(--warn)'],
-    ['예정일 등록', rows.length, '건', rv('sogongin')],
-    ...(mcp ? [['캘린더 미반영', unreg.length, '건 (미등록·날짜 변경)', rv('coord')]] : []),
-  ]){
-    const tl = el('div','tile'); tl.style.setProperty('--tc', c);
-    tl.append(el('i', null, label), el('b', null, String(val)), el('em', null, unit));
-    tiles.append(tl);
-  }
-  sum.append(tiles);
-  sum.append(el('div','rnote','예정일이 입력된 단계만 나옵니다. 예정일은 보드에서 과제를 열어 각 단계에 입력합니다.'));
-  schedEl.append(sum);
-
-  /* --- 일정 목록 --- */
   const lc = el('section','rcard');
   const lh = el('div','rhead');
-  lh.append(el('h2', null, '예정 일정'));
-  lh.append(el('span','n mono', rows.length + '건'));
-  lh.append(el('span','grow'));
-  lh.append(originControl());
+  lh.append(el('h2', null, '구글 캘린더에 올리기'), el('span','n mono', '예정일 ' + rows.length + '건'), el('span','grow'));
   lh.append(csvBtn('구글캘린더_일정_' + t + '.csv',
     [['Subject', r => gcalTitle(r)],
      ['Start Date', r => usDate(r.date)],
@@ -2207,47 +2233,15 @@ function renderSched(){
       ].join(' / ')]],
     rows, { bom:false, label:'구글 캘린더용 CSV' }));
   lc.append(lh);
-
-  const tb = document.createElement('table');
-  tb.append(headRow(['예정일','D-day','업체명','차수','단계','주관','담당','방문지','캘린더']));
-  const body = document.createElement('tbody');
-  if (!rows.length) body.append(emptyRow(9, '예정일이 입력된 단계가 없습니다. 보드에서 과제를 열어 단계별 예정일을 입력해 주세요.'));
-  for (const r of rows){
-    const tr = document.createElement('tr');
-    if (r.overdue) tr.className = 'overdue';
-    tr.append(td(r.date,'num'));
-
-    const dc = document.createElement('td');
-    const dd = el('span','dday ' + (r.overdue ? 'over' : r.dd <= 7 ? 'soon' : 'far'),
-                  r.st.status === 'done' ? '완료' : ddayLabel(r.dd));
-    dc.append(dd); tr.append(dc);
-
-    tr.append(td(r.p.company,'co'), td(r.p.cycle,'num'));
-
-    const sc2 = document.createElement('td');
-    const pill = el('span','vpill', r.s.n + '. ' + r.s.name);
-    pill.style.setProperty('--rc', rv(r.s.owner));
-    sc2.append(pill); tr.append(sc2);
-
-    tr.append(td(ROLES[r.s.owner].label));
-    tr.append(td(dash(r.p.contacts?.[r.s.owner]?.name)));
-    tr.append(visitCell(r));
-    tr.append(calCell(r));
-
-    body.append(tr);
-  }
-  tb.append(body);
-  const wrap = el('div','tbl-wrap'); wrap.append(tb); lc.append(wrap);
-
   const how = el('div','howto');
   how.append(el('b', null, '구글 캘린더에 올리는 방법'));
   const ol = document.createElement('ol');
   for (const s of (mcp ? [
-    '표 오른쪽 «등록»을 누르면 그 예정일이 종일 일정으로 구글 캘린더에 바로 들어가고, «활동»에 캘린더 등록으로 기록됩니다.',
-    '보드에서 예정일을 바꾸면 «날짜 수정»으로 바뀝니다. 누르면 캘린더 일정의 날짜가 옮겨지고 그 변경도 활동에 남습니다.',
+    '«할 일 → 목록»의 «이번 주 예정»·«그 뒤 예정» 표에서 «등록»을 누르면 그 예정일이 종일 일정으로 구글 캘린더에 바로 들어가고, «보고서 → 연락 이력»에 캘린더 등록으로 기록됩니다.',
+    '보드에서 예정일을 바꾸면 그 칸이 «날짜 수정»으로 바뀝니다. 누르면 캘린더 일정의 날짜가 옮겨지고 그 변경도 기록에 남습니다.',
     '구글 캘린더에서 직접 옮기거나 지운 일정은 보드 예정일에 반영되지 않습니다. 날짜는 보드에서 고친 뒤 «날짜 수정»으로 맞추세요.',
   ] : [
-    '한 건씩 — 표 오른쪽 «캘린더 추가»를 누르면 구글 캘린더 일정 만들기 화면이 내용이 채워진 채로 새 탭에서 열립니다. 저장만 누르면 됩니다.',
+    '한 건씩 — «할 일 → 목록»의 예정 일정 표에서 «캘린더 추가»를 누르면 구글 캘린더 일정 만들기 화면이 내용이 채워진 채로 새 탭에서 열립니다. 저장만 누르면 됩니다.',
     '한꺼번에 — 위 «구글 캘린더용 CSV»를 받은 뒤, 구글 캘린더 → 설정(톱니) → 가져오기/내보내기 → 파일 선택 → 넣을 캘린더 선택 → 가져오기.',
     '일정이 바뀌면 보드에서 예정일을 고치고 다시 올립니다. 이미 올린 구글 캘린더 일정은 자동으로 바뀌지 않으니 직접 수정하거나 지웁니다.',
   ])){ const li = document.createElement('li'); li.textContent = s; ol.append(li); }
@@ -2349,7 +2343,7 @@ function todayCard(title, note, heads, items, rowOf, emptyText){
 
 function renderToday(){
   const t = today(), wk = addDays(t, 7);
-  const over = [], soon = [], unreg = [], docs = [], due = [], plan = [];
+  const over = [], docs = [], due = [], plan = [];
   const shown = visible();
   for (const [id, p] of shown){
     // 장비 도입 마감: 사업 종료일까지 «설치 완료»·«가동 중»이 아닌 자산(상태는 사람이 바꾼다)
@@ -2365,10 +2359,6 @@ function renderToday(){
       if (st.planned && st.status !== 'done'){
         const it = { id, p, s, st, date:st.planned, dd:dayDiff(st.planned, t) };
         if (st.planned < t) over.push(it);
-        else {
-          if (VISIT_STEPS.includes(s.n) && st.planned <= wk) soon.push(it);
-          if (mcp){ const reg = registeredEvent(p, s.n); if (!reg || reg.date !== st.planned) unreg.push(Object.assign({ reg }, it)); }
-        }
       }
       if (st.status === 'done' || st.status === 'doing'){
         const miss = missingDocs(s, st);
@@ -2380,22 +2370,27 @@ function renderToday(){
   const wait = replyTargets().filter(x => ids.has(x.pid) && replyState.get(x.a.messageId) !== 'replied')
     .map(x => ({ id:x.pid, p:x.p, a:x.a, s:STEPS[(x.a.step || 1) - 1] }));
   const byDate = (a, b) => a.date.localeCompare(b.date) || a.p.company.localeCompare(b.p.company, 'ko');
-  over.sort(byDate); soon.sort(byDate); unreg.sort(byDate);
+  over.sort(byDate);
+  // 앞으로의 예정(보드 예정일, 완료 전): 이번 주(7일 안) / 그 뒤 — 옛 «일정» 탭의 예정 표
+  const ahead = scheduleRows().filter(r => !r.overdue && r.st.status !== 'done');
+  const week = ahead.filter(r => r.date <= wk), later = ahead.filter(r => r.date > wk);
+  const unreg = mcp ? ahead.filter(r => { const g = registeredEvent(r.p, r.s.n); return !g || g.date !== r.date; }) : [];
   due.sort((a, b) => a.dd - b.dd || a.p.company.localeCompare(b.p.company, 'ko') || productLabel(a.pr).localeCompare(productLabel(b.pr), 'ko'));
   plan.sort((a, b) => a.p.company.localeCompare(b.p.company, 'ko'));
 
   todayEl.replaceChildren();
+  subnavTo(todayEl, 'today');
   const sum = el('section','rcard');
   const sh = el('div','rhead');
-  sh.append(el('h2', null, '오늘 챙길 일'), el('span','n mono', withDow(t)));
+  sh.append(el('h2', null, '할 일'), el('span','n mono', '오늘 ' + withDow(t)));
   sum.append(sh);
   const tiles = el('div','tiles');
   for (const [label, val, unit, c] of [
     ['기한 경과', over.length, '단계', '#c0392b'],
-    ['7일 내 방문', soon.length, '건', rv('coord')],
+    ['이번 주 예정', week.length, '건 (7일 안)', rv('coord')],
     ['장비 도입 미완료', due.length, '건 (종료일까지 설치 전)', rv('supplier')],
     ['사업계획서 점검', plan.length, '과제 (한도·기간·현물)', 'var(--warn)'],
-    ...(mcp ? [['캘린더 미등록', unreg.length, '건 (미등록·날짜 변경)', rv('supplier')]] : []),
+    ...(mcp ? [['캘린더 미반영', unreg.length, '건 (미등록·날짜 변경)', rv('supplier')]] : []),
     ['서명·서류 미수집', docs.length, '단계', 'var(--warn)'],
     ['회신 대기', wait.length, '건 (자료 요청·일정 조율)', rv('sogongin')],
   ]){
@@ -2404,16 +2399,15 @@ function renderToday(){
     tiles.append(tl);
   }
   sum.append(tiles);
-  sum.append(el('div','rnote','상단 검색·연도·공고·코디 필터가 적용됩니다. 행을 누르면 그 단계가 펼쳐진 과제 상세가 열립니다.'));
+  sum.append(el('div','rnote','지금·앞으로 할 일을 한 목록에 모았습니다. 구글 캘린더 월간 보기는 «달력»에 있습니다. 상단 검색·연도·공고·코디 필터가 적용됩니다. 행을 누르면 그 단계가 펼쳐진 과제 상세가 열립니다.'));
   todayEl.append(sum);
 
   todayEl.append(todayCard('기한 경과', '예정일이 지났는데 완료되지 않은 단계입니다.', ['예정일','경과','업체','단계','주관 담당'], over,
     r => [td(r.date,'num'), ddCell(r.dd, 'over'), coCell(r.p), stepPill(r.s), td(dash(r.p.contacts?.[r.s.owner]?.name))],
     '기한이 지난 단계가 없습니다.'));
 
-  todayEl.append(todayCard('7일 안의 방문', null, ['예정일','D-day','업체','방문','방문지'], soon,
-    r => [td(withDow(r.date),'num'), ddCell(r.dd, r.dd <= 2 ? 'soon' : 'far'), coCell(r.p), stepPill(r.s), visitCell(r)],
-    '7일 안에 예정된 방문이 없습니다.'));
+  todayEl.append(schedCard('이번 주 예정 (7일 안)', week, '7일 안에 예정된 단계가 없습니다.',
+    mcp ? '«캘린더» 칸에서 구글 캘린더에 등록하거나(«등록») 바뀐 날짜를 맞춥니다(«날짜 수정»). 방문 단계는 «길찾기»로 경로를 엽니다.' : null));
 
   todayEl.append(todayCard('장비 도입 마감', '사업 종료일까지 도입(설치)을 끝내지 못하면 협약 취소·환수될 수 있습니다(공고). «설치 완료»·«가동 중»이 아닌 자산입니다 — 설치되면 자산 상태를 바꾸세요.',
     ['종료일','D-day','업체','장비','상태','발주일'], due,
@@ -2426,16 +2420,6 @@ function renderToday(){
     ['업체','단계','점검 결과'], plan,
     r => [coCell(r.p), stepPill(r.s), td(r.iss.join(' · '))],
     '점검에 걸린 과제가 없습니다.'));
-
-  if (mcp){
-    const card = todayCard('캘린더 미등록', '«일정» 탭에서 등록하거나 날짜를 맞출 수 있습니다.', ['예정일','업체','단계','상태'], unreg,
-      r => [td(r.date,'num'), coCell(r.p), stepPill(r.s), td(r.reg ? '날짜 변경 (캘린더 ' + r.reg.date + ')' : '미등록')],
-      '캘린더에 반영되지 않은 예정일이 없습니다.');
-    const go2 = el('button','btn ghost','일정 탭으로');
-    go2.addEventListener('click', () => { state.tab = 'sched'; render(); });
-    card.querySelector('.rhead').append(el('span','grow'), go2);
-    todayEl.append(card);
-  }
 
   todayEl.append(todayCard('서명·서류 미수집', '진행 중이거나 완료된 단계에서 체크하지 않은 산출물입니다. 받았으면 과제 상세에서 체크하세요.',
     ['업체','단계','상태','미수집'], docs,
@@ -2454,6 +2438,8 @@ function renderToday(){
     ['발송','업체','단계','구분','수신자','상태'], wait,
     r => [td(fmtTs(r.a.ts),'num'), coCell(r.p), stepPill(r.s), td(KIND_LABEL[r.a.kind] || ''), td(recipText(r.a.to) || '—'), td(waitText(r.a))],
     '회신을 기다리는 메일이 없습니다.'));
+
+  todayEl.append(schedCard('그 뒤 예정', later, '8일 뒤로 예정된 단계가 없습니다.', '예정일이 입력된 단계만 나옵니다. 예정일은 과제를 열어 각 단계에 입력합니다.'));
 }
 
 /* ======================= 활동 ======================= */
@@ -2474,6 +2460,7 @@ function activityRows(){
 function renderActivity(){
   const rows = activityRows();
   actEl.replaceChildren();
+  subnavTo(actEl, 'act');
 
   /* --- 요약 --- */
   const sum = el('section','rcard');
@@ -2766,6 +2753,7 @@ function assetList(rows, emptyText, showProject){
 /* ---------- 장비 목록 ---------- */
 function renderProducts(){
   prodEl.replaceChildren();
+  subnavTo(prodEl, 'prod');
   const add = el('button','btn primary','+ 장비 추가');
   add.addEventListener('click', () => openProductForm(null));
   const all = [...state.products.entries()];
@@ -2775,7 +2763,7 @@ function renderProducts(){
      ['견적 단가', ([, x]) => x.unitPrice ?? ''], ['단위', ([, x]) => x.unit || ''], ['주요 사양', ([, x]) => x.spec || ''],
      ['자산 건수', ([id]) => assetsWhere(a => a.productId === id).length], ['도입 수량', ([id]) => qty(id)]], all);
   const head = listHead(prodEl, '장비 목록', all.length + '종', [csv, add],
-    '장비(Product) = 공급기업이 제안·공급하는 H/W·S/W 모델. 행을 누르면 장비 상세(도입된 과제)가 열립니다. 과제에 들여온 건은 «자산» 탭에서 관리합니다.');
+    '장비(Product) = 공급기업이 제안·공급하는 H/W·S/W 모델. 행을 누르면 장비 상세(도입된 과제)가 열립니다. 과제에 들여온 건은 «자산» 보기에서 관리합니다.');
   const tools = el('div','abtools'); tools.style.marginTop = '9px';
   const chips = el('div','chips');
   for (const [k, label] of [['', '전체'], ...Object.entries(PRODUCT_KIND)]){
@@ -2819,6 +2807,7 @@ function renderProducts(){
 /* ---------- 자산 목록 ---------- */
 function renderAssets(){
   assetEl.replaceChildren();
+  subnavTo(assetEl, 'asset');
   const add = el('button','btn primary','+ 자산 등록');
   add.addEventListener('click', () => openAssetForm(null));
   const all = [...state.assets.entries()];
@@ -3145,7 +3134,7 @@ function activitySection(body, rows, emptyText){
   const av = el('div','mails');
   if (!rows.length) av.append(el('div','rnote', emptyText));
   rows.slice(0, 20).forEach(x => av.append(activityEl(x.a, true, x.p.company + ' ' + x.p.cycle)));
-  if (rows.length > 20) av.append(el('div','rnote','최근 20건만 표시합니다. 전체는 «활동» 탭에서 보세요.'));
+  if (rows.length > 20) av.append(el('div','rnote','최근 20건만 표시합니다. 전체는 «보고서 → 연락 이력»에서 보세요.'));
   body.append(av);
 }
 
@@ -3652,6 +3641,7 @@ function assistToggle(open = !assist.open){
 }
 
 /* ---------- 목록 탭 공통: 유형 칩 + 검색 ---------- */
+const abOpen = new Set();   // 기관별 보기에서 담당자를 펼친 기관 id
 function listHead(host, title, count, actions, noteText){
   const head = el('section','rcard');
   const hh = el('div','rhead');
@@ -3734,14 +3724,17 @@ function renderProjects(){
 /* ---------- 기관(Account) 목록 ---------- */
 function renderAccounts(){
   accEl.replaceChildren();
+  subnavTo(accEl, 'acc');
   const addA = el('button','btn primary','+ 기관 추가');
   addA.addEventListener('click', () => openAccountForm(null, { type: state.abType || 'sogongin' }));
   const all = [...state.accounts.entries()];
   const csv = csvBtn('기관목록_' + today() + '.csv',
     [['유형', ([,a]) => ROLES[a.type]?.label || ''], ['기관명', ([,a]) => a.name], ['대표전화', ([,a]) => a.phone || ''], ['주소', ([,a]) => a.address || ''], ['상세 주소', ([,a]) => a.addressDetail || ''], ['방문 안내', ([,a]) => a.visitNote || ''],
      ['담당자 수', ([id]) => peopleOf(id).length], ['관련 과제 수', ([id]) => projectsLinkedTo(c => c.accountId === id).length]], all);
-  const head = listHead(accEl, '기관 목록', all.length + '곳', [csv, cardBtn(), addA].filter(Boolean),
-    '소공인 업체, 코디네이터 소속기관, 공급기업, 컨설팅사(Account). 소공인 기관명은 과제 업체명으로 쓰입니다. 행을 누르면 기관 상세(담당자·관련 과제·연락 이력)가 열립니다.');
+  const addP = el('button','btn','+ 담당자 추가');
+  addP.addEventListener('click', () => openContactForm(null, state.abType ? { type:state.abType } : null));
+  const head = listHead(accEl, '기관 목록', all.length + '곳', [csv, cardBtn(), addA, addP].filter(Boolean),
+    '소공인 업체, 코디네이터 소속기관, 공급기업, 컨설팅사(Account)와 소속 담당자. «▸»를 누르면 담당자가 펼쳐지고, 검색어가 담당자에 걸리면 자동으로 펼쳐집니다. 기관 행을 누르면 기관 상세, 담당자 행을 누르면 담당자 상세가 열립니다.');
   typeTools(head, renderAccounts, paint);
 
   const card = el('section','rcard');
@@ -3752,7 +3745,7 @@ function renderAccounts(){
     const rows = all
       .filter(([,a]) => !state.abType || a.type === state.abType)
       .filter(([id,a]) => !qq || (a.name || '').toLowerCase().includes(qq)
-        || peopleOf(id).some(([,c]) => [c.name, c.title, c.email, c.kakao].some(v => (v || '').toLowerCase().includes(qq))))
+        || peopleOf(id).some(([,c]) => [c.name, c.title, c.email, c.kakao, c.phone].some(v => (v || '').toLowerCase().includes(qq))))
       .sort((x,y) => ROLE_ORDER.indexOf(x[1].type) - ROLE_ORDER.indexOf(y[1].type) || (x[1].name || '').localeCompare(y[1].name || '','ko'));
     const tb = document.createElement('table');
     tb.append(headRow(['기관명','유형','담당자','관련 과제','대표전화','주소']));
@@ -3762,14 +3755,32 @@ function renderAccounts(){
       const tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
       tr.addEventListener('click', () => go('account', aid));
-      const nm = td(a.name, 'co');
+      // 기관별 보기: 소속 담당자를 기관 행 아래에 펼친다. 검색어가 담당자에 걸리면 자동으로 펼치고 그 행을 강조한다
+      const ppl = peopleOf(aid);
+      const hitOf = c => !!qq && [c.name, c.title, c.email, c.kakao, c.phone].some(v => (v || '').toLowerCase().includes(qq));
+      const open = abOpen.has(aid) || ppl.some(([, c]) => hitOf(c));
+      const tg = el('button','linkbtn abtg', ppl.length ? (open ? '▾' : '▸') : '·');
+      tg.type = 'button'; tg.disabled = !ppl.length; tg.setAttribute('aria-expanded', String(open));
+      tg.setAttribute('aria-label', a.name + ' 담당자 ' + (open ? '접기' : '펼치기'));
+      tg.addEventListener('click', e => { e.stopPropagation(); if (abOpen.has(aid)) abOpen.delete(aid); else abOpen.add(aid); paint(); });
+      const nm = td('', 'co');
+      nm.append(tg, document.createTextNode(' ' + a.name));
       if (a.isSample){ nm.append(document.createTextNode(' ')); nm.append(el('span','badge sample','예시')); }
       tr.append(nm);
       const tc = document.createElement('td');
       const pill = el('span','vpill', ROLES[a.type]?.label || a.type); pill.style.setProperty('--rc', ROLES[a.type] ? rv(a.type) : 'var(--ink-3)');
       tc.append(pill); tr.append(tc);
-      tr.append(td(peopleOf(aid).length + '명', 'num'), td(projectsLinkedTo(c => c.accountId === aid).length + '건', 'num'), td(dash(a.phone), 'num'), td(dash(a.address)));
+      tr.append(td(ppl.length + '명', 'num'), td(projectsLinkedTo(c => c.accountId === aid).length + '건', 'num'), td(dash(a.phone), 'num'), td(dash(a.address)));
       body.append(tr);
+      if (open) for (const [cid, c] of ppl){
+        const cr = el('tr','absub' + (hitOf(c) ? ' hit' : ''));
+        cr.style.cursor = 'pointer';
+        cr.addEventListener('click', () => go('contact', cid));
+        const n = projectsLinkedTo(x => x.contactId === cid).length;
+        const cell = td('└ ' + (personLabel(c) || '(이름 없음)')); cell.colSpan = 2;
+        cr.append(cell, td(dash(c.phone), 'num'), td(n ? '과제 ' + n + '건' : '—', 'num'), td(dash(c.email)), td(dash(c.kakao)));
+        body.append(cr);
+      }
     }
     tb.append(body);
     const w = el('div','tbl-wrap'); w.append(tb); card.append(w);
@@ -3780,6 +3791,7 @@ function renderAccounts(){
 /* ---------- 담당자(Contact) 목록 ---------- */
 function renderContacts(){
   conEl.replaceChildren();
+  subnavTo(conEl, 'con');
   const addC = el('button','btn primary','+ 담당자 추가');
   addC.addEventListener('click', () => openContactForm(null, state.abType ? { type:state.abType } : null));
   const csv = csvBtn('담당자목록_' + today() + '.csv',
@@ -3829,6 +3841,7 @@ function renderReport(){
   const visits = visitRows();
   const rows = statusRows();
   reportEl.replaceChildren();
+  subnavTo(reportEl, 'report');
 
   /* --- 기간 요약 --- */
   const sum = el('section','rcard');
@@ -5840,7 +5853,7 @@ function openNew(){
   note.style.margin = '10px 0 0';
   const bookA = el('button','btn ghost','담당자 목록 열기');
   bookA.addEventListener('click', () => { close(); state.tab = 'con'; render(); });
-  note.append(document.createTextNode('목록에 없는 사람은 먼저 «담당자» 탭에서 등록하세요. '), bookA);
+  note.append(document.createTextNode('목록에 없는 사람은 먼저 «기관·담당자» 탭에서 등록하세요. '), bookA);
   m.append(note);
 
   const err = el('div','err'); err.hidden = true; m.append(err);
@@ -5892,9 +5905,7 @@ document.getElementById('fcoord').addEventListener('change', e => { state.coord 
 document.getElementById('fyear').addEventListener('change', e => { state.year = e.target.value; repaint(); });
 document.getElementById('fnotice').addEventListener('change', e => { state.notice = e.target.value; repaint(); });
 document.getElementById('hideDone').addEventListener('change', e => { state.hideDone = e.target.checked; repaint(); });
-for (const [btnId, key] of TABS){
-  document.getElementById(btnId).addEventListener('click', () => { state.tab = key; toggleMore(false); render(); });
-}
+for (const [btnId] of TAB_GROUPS) document.getElementById(btnId).addEventListener('click', () => goTab(btnId));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && (state.openId || state.rec)) closeRec(); });
 
 /* ======================= 기동 ======================= */

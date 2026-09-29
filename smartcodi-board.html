@@ -249,6 +249,13 @@ main{flex:1 1 auto;overflow:auto;padding:14px 16px 18px;-webkit-overflow-scrolli
 .outs{display:flex;flex-direction:column;gap:6px}
 .pout .lact{align-items:center}
 .abub .cardbox .kv i{width:60px}
+.qwrap{overflow-x:auto;margin-top:8px}
+.qtable{border-collapse:collapse;width:100%;font-size:12px}
+.qtable th{text-align:left;font-weight:600;color:var(--ink-2);padding:4px 6px;border-bottom:1px solid var(--line)}
+.qtable td{padding:5px 6px;border-top:1px solid var(--line-soft);vertical-align:top}
+.qtable select,.qtable input[type=number]{font-size:12px;padding:2px 4px;max-width:92px}
+.qtable .qsub{font-size:11px;color:var(--ink-3);margin-top:2px}
+.qtable .qwarn{font-size:11px;color:var(--warn);margin-top:2px}
 .afoot{border-top:1px solid var(--line);padding:10px 12px;display:flex;flex-direction:column;gap:6px}
 .afoot textarea{border:1px solid var(--line);background:var(--surface-2);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;min-height:44px;max-height:160px;font-family:inherit}
 .abar{display:flex;gap:6px;align-items:center}
@@ -3359,9 +3366,12 @@ function cardBtn(){
    «등록해 줘»처럼 말하면, 매 턴 sample.json 한 번으로 {reply, card, action}을 받는다.
    · card = 명함 값(읽거나 대화로 고친 전체) → 말풍선에 cardReview(미리보기·기관 선택·유형·중복 경고)
    · action "register" = 사용자가 등록하라고 함 → 마지막 명함의 «등록 창 열기»와 같은 동작. 저장은 사람이 창에서 한다.
-   대화·이미지는 이 화면 메모리에만 있고 저장하지 않는다. 이미지는 그 턴에만 보낸다(이전 이미지 내용은 명함 값으로 이어진다).
-   지금 할 수 있는 일은 명함 등록뿐 — 다른 요청은 못 한다고 답하게 한다. 누른 사람의 Claude 사용량을 쓴다. */
-const assist = { open:false, turns:[], card:null, lastReview:null, imgs:[], busy:null, maxImg:0, types:[], n:0 };
+   · quote = 견적서 값(PDF는 보드가 글자를 뽑아 보냄) → 말풍선에 quoteReview(공급기업·과제·품목 표) → «선택한 N건 등록»을 사람이 누른다.
+   대화·이미지·PDF는 이 화면 메모리에만 있고 저장하지 않는다. 첨부는 그 턴에만 보낸다(이전 내용은 명함·견적서 값으로 이어진다).
+   명함·견적서 등록, 양식 초안 외의 요청은 못 한다고 답하게 한다. 누른 사람의 Claude 사용량을 쓴다. */
+const assist = { open:false, turns:[], card:null, lastReview:null, quote:null, lastKind:'', imgs:[], pdfs:[], busy:null, maxImg:0, types:[], n:0 };
+const QUOTE_TEXT_MAX = 8000;   // 견적서 PDF 텍스트 상한(자) — 한글 1자 = 3바이트라 규칙·목록과 함께 요청 64KiB 안
+const isPdf = f => !!f && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''));
 let sampleState = 'pending';   // use('sample') 결과: pending → ready | none
 const ASSIST_TURNS = 12;   // 보내는 이전 대화 턴 수(오래된 것부터 버림)
 const DRAFT_FORMS = () => FORMS.filter(f => !f.ref);   // 도우미가 쓸 수 있는 양식: 수행일지 1~4차·사업계획서·결과보고서
@@ -3370,10 +3380,20 @@ function assistRules(){
   const projs = [...state.projects.entries()].slice(0, 100).map(([id, p]) => '- ' + id + ' | ' + p.company + ' | ' + p.cycle + ' | ' + curStepName(p));
   const open = state.openId && state.projects.get(state.openId);
   return [
-    '[도우미] 당신은 «소공인 스마트제조 코디 보드»의 도우미입니다. 할 수 있는 일은 두 가지입니다.',
+    '[도우미] 당신은 «소공인 스마트제조 코디 보드»의 도우미입니다. 할 수 있는 일은 세 가지입니다.',
     '  (1) 명함(사진·텍스트)을 읽어 기관·담당자 등록 창을 채워 주기',
     '  (2) 과제의 수행일지(1~4차)·사업계획서·결과보고서 초안 쓰기 — 보드 데이터와 사용자가 대화로 알려 준 내용만 근거로',
-    '저장은 사람이 합니다(등록 창·«단계 산출물로 등록» 버튼). 당신이 저장·등록·제출을 마쳤다고 말하지 마세요.',
+    '  (3) 견적서(PDF 텍스트·사진)를 읽어 장비·도입 장비(자산) 등록 표를 만들어 주기',
+    '저장은 사람이 합니다(등록 창·«단계 산출물로 등록»·«선택한 N건 등록» 버튼). 당신이 저장·등록·제출을 마쳤다고 말하지 마세요.',
+    '견적서 읽기 규칙:',
+    '- 견적서에 적힌 것만 옮깁니다. 추측·계산·보완 금지. 없으면 "".',
+    '- supplier = 견적을 낸 회사(공급자), to = 견적을 받는 회사(수신), date = 견적일(YYYY-MM-DD, 적힌 날짜만), number = 견적번호, vat = "별도"|"포함"|""(적힌 대로).',
+    '- items = 품목 한 줄에 하나. kind = "hw"(장비·기계·센서 등 H/W) | "sw"(소프트웨어·라이선스·구독) + kindWhy 근거 한 줄. name = 품명, model = 모델·규격 코드, spec = 사양 요약.',
+    '- unit = "대"|"식"|"개"|"월(임차)" 중 가장 가까운 것(원문 단위는 unitRaw). qty = 수량, unitPrice = 단가, amount = 금액 — 숫자는 적힌 그대로. 단가가 "포함"·빈칸이면 "".',
+    '- 월 단위 임차·구독 S/W는 unit "월(임차)", qty = 개월 수, unitPrice = 1개월 금액. 라이선스 수 곱하기 등 계산이 필요하면 계산하지 말고 note에 원문을 적습니다.',
+    '- 합계·부가세·할인 줄은 items에 넣지 말고 totals {supply, vat, total}에(적힌 숫자만). 할인·포함·옵션 같은 주석은 그 품목의 note에.',
+    '- 견적서를 받으면 quote를 채우고 projectId = 수신 업체와 같은 [과제 목록]의 id(모르면 ""). reply에는 공급기업·품목 수·합계를 두세 줄로 말하고 «아래 표에서 확인하고 등록을 눌러 주세요».',
+    '- 값을 고치라고 하면(«2번은 S/W야») [현재 견적서]를 고친 quote 전체를 다시 줍니다. 고칠 게 없으면 quote는 null.',
     '양식 작성 규칙:',
     '- 사용자가 양식 작성을 요청하면 action "draft", projectId = [과제 목록]의 id, formId = [양식 목록]의 id. reply에는 «OO 과제의 2차 수행일지 초안을 씁니다»처럼 짧게.',
     '- 과제는 업체명으로 찾고, 말하지 않았으면 [지금 열린 과제]를 씁니다. 그래도 모르거나 양식이 모호하면 action "none"으로 짧게 되묻습니다.',
@@ -3387,9 +3407,11 @@ function assistRules(){
     '- 사용자가 명함을 주면 card를 채우고, reply에 읽은 요지(기관·유형 추정·이름 직함·연락처)를 두세 줄로 말한 뒤 «등록 창을 열까요?»라고 묻습니다.',
     '- 사용자가 값을 고치라고 하면 [현재 명함]을 고친 card 전체를 다시 줍니다. 고칠 게 없으면 card는 null.',
     '- 사용자가 등록하라고(«네», «등록해 줘» 등) 하면 action "register", card는 null(또는 고친 전체). 명함이 아직 없으면 명함을 달라고 합니다.',
-    '- 명함 등록·양식 작성 외의 요청(과제 조회·메일 보내기 등)은 아직 못 한다고 짧게 안내합니다.',
+    '- 명함·견적서 등록, 양식 작성 외의 요청(과제 조회·메일 보내기 등)은 아직 못 한다고 짧게 안내합니다.',
     '- 아래 [보드의 기존 기관]에 같은 기관이 있으면 reply에 알려 주세요(기존 기관에 담당자만 추가할 수 있음).',
-    '답은 JSON 객체 하나: {"reply":"…","card":{"org":"","orgType":"","orgTypeWhy":"","name":"","title":"","mobile":"","tel":"","email":"","kakao":"","address":"","addressDetail":"","website":"","other":""} 또는 null,"action":"none"|"register"|"draft","projectId":"","formId":""}',
+    '답은 JSON 객체 하나: {"reply":"…","card":{"org":"","orgType":"","orgTypeWhy":"","name":"","title":"","mobile":"","tel":"","email":"","kakao":"","address":"","addressDetail":"","website":"","other":""} 또는 null,'
+      + '"quote":{"supplier":{"name":"","tel":"","address":"","addressDetail":"","bizNo":""},"to":"","date":"","number":"","vat":"","totals":{"supply":"","vat":"","total":""},'
+      + '"items":[{"kind":"","kindWhy":"","name":"","model":"","spec":"","unit":"","unitRaw":"","qty":"","unitPrice":"","amount":"","note":""}]} 또는 null,"action":"none"|"register"|"draft","projectId":"","formId":""}',
     '', '[양식 목록]', ...DRAFT_FORMS().map(f => '- ' + f.id + ' | ' + f.name + ' | ' + f.step + '단계'),
     '', '[과제 목록] id | 업체 | 차수 | 현재 단계', ...(projs.length ? projs : ['(없음)']),
     '', '[지금 열린 과제] ' + (open ? state.openId + ' | ' + open.company + ' | ' + open.cycle : '없음'),
@@ -3406,47 +3428,69 @@ function assistBubble(role, text, extra){
 }
 function assistThumbs(){
   assist.thumbs.replaceChildren();
-  assist.imgs.forEach((f, i) => {
-    const t = el('span','athumb', f.name || '붙여 넣은 이미지');
-    const x = el('button','btn ghost','✕'); x.setAttribute('aria-label','이미지 빼기');
-    x.addEventListener('click', () => { assist.imgs.splice(i, 1); assistThumbs(); });
+  for (const [list, what] of [[assist.imgs, '이미지'], [assist.pdfs, 'PDF']]) list.forEach((f, i) => {
+    const t = el('span','athumb', (what === 'PDF' ? '📄 ' : '') + (f.name || '붙여 넣은 이미지'));
+    const x = el('button','btn ghost','✕'); x.setAttribute('aria-label', what + ' 빼기');
+    x.addEventListener('click', () => { list.splice(i, 1); assistThumbs(); });
     t.append(x); assist.thumbs.append(t);
   });
-  assist.thumbs.hidden = !assist.imgs.length;
+  assist.thumbs.hidden = !assist.imgs.length && !assist.pdfs.length;
 }
 function assistAddFiles(files){
-  const ok = [...files].filter(f => f && (assist.types.length ? assist.types.includes(f.type) : /^image\//.test(f.type)));
-  if (!assist.maxImg){ if (ok.length) assistBubble('sys', '이 화면에서는 이미지를 보낼 수 없습니다. 명함 내용을 텍스트로 붙여 넣어 주세요.'); return; }
+  const all = [...files].filter(Boolean);
+  const pdf = all.find(isPdf);
+  if (pdf) assist.pdfs = [pdf];   // 견적서 PDF는 한 번에 하나
+  const ok = all.filter(f => !isPdf(f) && (assist.types.length ? assist.types.includes(f.type) : /^image\//.test(f.type)));
+  if (!assist.maxImg){ if (ok.length) assistBubble('sys', '이 화면에서는 이미지를 보낼 수 없습니다. 명함 내용을 텍스트로 붙여 넣거나, 견적서는 PDF로 첨부해 주세요.'); assistThumbs(); return; }
   for (const f of ok) if (assist.imgs.length < assist.maxImg) assist.imgs.push(f);
   assistThumbs();
 }
 async function assistSend(){
   const text = assist.input.value.trim();
-  if (assist.busy || (!text && !assist.imgs.length)) return;
-  const imgs = assist.imgs.splice(0); assistThumbs();
+  if (assist.busy || (!text && !assist.imgs.length && !assist.pdfs.length)) return;
+  const imgs = assist.imgs.splice(0), pdfs = assist.pdfs.splice(0); assistThumbs();
   assist.input.value = '';
-  const said = text || '(명함 사진)';
-  assistBubble('me', said + (imgs.length ? '  📎' + imgs.length : ''));
-  const wait = assistBubble('bot', '읽는 중…');
+  const said = text || (pdfs.length ? '(견적서 PDF)' : '(명함 사진)');
+  assistBubble('me', said + (imgs.length + pdfs.length ? '  📎' + (imgs.length + pdfs.length) : ''));
+  const wait = assistBubble('bot', pdfs.length ? 'PDF 읽는 중…' : '읽는 중…');
   const ctl = new AbortController(); assist.busy = ctl; assist.stop.hidden = false; assist.send.disabled = true;
-  const cur = '[현재 명함] ' + (assist.card ? JSON.stringify(assist.card) : '없음');
+  const cur = '[현재 명함] ' + (assist.card ? JSON.stringify(assist.card) : '없음') + '\n[현재 견적서] ' + (assist.quote ? JSON.stringify(assist.quote) : '없음');
   const hist = assist.turns.slice(-ASSIST_TURNS);
-  const turns = [{ role:'user', content:assistRules() }, ...hist,
-    { role:'user', content:said + (imgs.length ? '\n(명함 이미지 ' + imgs.length + '장 첨부)' : '') + '\n\n' + cur }];
   try {
+    // 견적서 PDF: 글자를 뽑아 보낸다. 글자 없는 PDF(스캔본)는 사진을 보낼 수 있는 화면에서만 쪽 이미지로
+    let doc = '';
+    for (const f of pdfs){
+      const d = await readPdf(new Uint8Array(await f.arrayBuffer()), { minLetters:PLAN_MIN_LETTERS, maxImages:async () => Math.max(0, assist.maxImg - imgs.length) });
+      if (d.mode === 'none') throw { code:'pdf_notext' };
+      if (d.mode === 'image'){ imgs.push(...d.images); doc += '\n[견적서 PDF: ' + f.name + ' — 글자가 없는 PDF라 쪽 이미지 ' + d.images.length + '장으로 첨부]'; }
+      else doc += '\n[견적서 PDF: ' + f.name + ', ' + d.pages + '쪽]\n' + d.text.slice(0, QUOTE_TEXT_MAX) + (d.text.length > QUOTE_TEXT_MAX ? '\n(… 앞 ' + QUOTE_TEXT_MAX + '자만 보냄)' : '');
+    }
+    wait.firstChild.textContent = '읽는 중…';
+    const turns = [{ role:'user', content:assistRules() }, ...hist,
+      { role:'user', content:said + (imgs.length ? '\n(첨부 이미지 ' + imgs.length + '장)' : '') + doc + '\n\n' + cur }];
     const r = await sampleFn.json(turns, Object.assign({ signal:ctl.signal, modelTier:'default', cache:false }, imgs.length ? { images:imgs } : {}));
     const reply = String(r?.reply || '').trim() || '(답이 비었습니다)';
     wait.remove();
-    assist.turns.push({ role:'user', content:said + (imgs.length ? ' (명함 이미지 ' + imgs.length + '장)' : '') }, { role:'assistant', content:reply });
-    let rev = null;
+    assist.turns.push({ role:'user', content:said + (imgs.length ? ' (이미지 ' + imgs.length + '장)' : '') + (pdfs.length ? ' (견적서 PDF ' + pdfs.map(f => f.name).join(', ') + ')' : '') },
+      { role:'assistant', content:reply });
+    let rev = null, qrev = null;
     if (r?.card && typeof r.card === 'object'){
       assist.card = normCard(r.card);
       rev = cardReview(assist.card, 'as-' + (++assist.n));
-      assist.lastReview = rev;
+      assist.lastReview = rev; assist.lastKind = 'card';
     }
-    assistBubble('bot', reply, rev);
+    if (r?.quote && typeof r.quote === 'object'){
+      assist.quote = normQuote(r.quote);
+      const pid = state.projects.has(r.projectId) ? r.projectId : state.openId && state.projects.has(state.openId) ? state.openId : '';
+      qrev = quoteReview(assist.quote, 'aq-' + (++assist.n), pid);
+      assist.lastKind = 'quote';
+    }
+    let extra = rev || qrev;
+    if (rev && qrev){ extra = el('div'); extra.append(rev, qrev); }
+    assistBubble('bot', reply, extra);
     if (r?.action === 'register'){
-      if (!assist.lastReview) assistBubble('sys', '아직 읽은 명함이 없습니다. 명함 사진이나 텍스트를 먼저 주세요.');
+      if (assist.lastKind === 'quote') assistBubble('sys', '견적서는 위 표에서 공급기업·과제·품목을 확인하고 «선택한 … 등록»을 직접 눌러 주세요.');
+      else if (!assist.lastReview) assistBubble('sys', '아직 읽은 명함이 없습니다. 명함 사진이나 텍스트를 먼저 주세요.');
       else {
         const res = assist.lastReview.openForms();
         assistBubble('sys', res === true ? '등록 창을 열었습니다. 값을 확인하고 저장을 눌러 주세요.' : res + ' (위 명함 카드에서 고른 뒤 «등록 창 열기»)');
@@ -3461,7 +3505,9 @@ async function assistSend(){
     }
   } catch (e){
     wait.remove();
-    assistBubble('sys', cardErrorText(e));
+    assistBubble('sys', e?.code === 'pdf_notext' ? '글자를 읽을 수 없는 PDF입니다(스캔본). 이 화면은 사진도 보낼 수 없어 읽지 못했습니다. 엑셀·한글에서 «PDF로 저장»한 견적서를 첨부하거나, 휴대폰 앱에서 사진으로 보내 주세요.'
+      : e?.code === 'pdf' ? 'PDF를 열 수 없습니다(' + (e.message || '형식 오류') + '). 다른 이름으로 다시 저장해 첨부하세요.'
+      : e?.message === 'load' ? 'PDF 읽기 도구를 불러오지 못했습니다(네트워크 확인).' : cardErrorText(e));
     if (['not_granted','sampling_disabled','not_declared','capability_disabled','capability_removed'].includes(e && e.code)) assist.denied = true;
   } finally {
     assist.busy = null; assist.stop.hidden = true; assist.send.disabled = !!assist.denied;
@@ -3582,24 +3628,169 @@ async function assistDraft(pid, form, ctl){
   assistBubble('bot', '«' + form.name + '» 초안입니다. 칸을 펼쳐 확인하세요.', box);
   if (qs.length) assistBubble('sys', '초안을 더 채우려면 알려 주세요:\n' + qs.map(q => '· ' + q).join('\n') + '\n알려 주신 뒤 «다시 써 줘»라고 하면 반영합니다.');
 }
+/* ---------- 도우미 견적서: 견적서 값 → 표(공급기업·과제·품목 확인) → «선택한 N건 등록» = 장비(Product) + 자산(Asset, 검토 중) ----------
+   견적서에 적힌 값만 옮긴다. 같은 공급기업·같은 모델(모델이 없으면 같은 이름)의 장비가 있으면 새로 만들지 않고 그 장비를 쓴다.
+   기존 장비 단가는 «단가 갱신»을 체크할 때만 바꾼다 — 단가는 장비에 있어 다른 과제 사업비도 함께 바뀌기 때문. */
+const numOrBlank = v => { const s = String(v ?? '').replace(/[\s,원₩]/g, ''); return /^\d+$/.test(s) ? Number(s) : ''; };
+function normQuote(r){
+  const s = v => String(v ?? '').trim(), sup = r?.supplier || {}, tot = r?.totals || {};
+  return {
+    supplier:{ name:s(sup.name), tel:s(sup.tel), address:s(sup.address), addressDetail:s(sup.addressDetail), bizNo:s(sup.bizNo) },
+    to:s(r?.to), date:s(r?.date), number:s(r?.number), vat:s(r?.vat),
+    totals:{ supply:numOrBlank(tot.supply), vat:numOrBlank(tot.vat), total:numOrBlank(tot.total) },
+    items:(Array.isArray(r?.items) ? r.items : []).map(x => {
+      const price = numOrBlank(x?.unitPrice);
+      return { kind:['hw','sw'].includes(x?.kind) ? x.kind : '', kindWhy:s(x?.kindWhy), name:s(x?.name), model:s(x?.model), spec:s(x?.spec),
+        unit:PRODUCT_UNITS.includes(s(x?.unit)) ? s(x.unit) : '', unitRaw:s(x?.unitRaw), qty:numOrBlank(x?.qty), unitPrice:price,
+        priceRaw:price === '' ? s(x?.unitPrice) : '', note:s(x?.note) };
+    }).filter(x => x.name),
+  };
+}
+const normKey = v => String(v || '').replace(/\s/g, '').toLowerCase();
+/** 같은 공급기업의 같은 장비 id(없으면 null) */
+function quoteMatch(supplierId, it){
+  for (const [id, pr] of state.products){
+    if (pr.supplierId !== supplierId) continue;
+    if (it.model ? normKey(pr.model) === normKey(it.model) : !pr.model && normKey(pr.name) === normKey(it.name)) return id;
+  }
+  return null;
+}
+function quoteReview(q, idp, pid0){
+  const box = el('div','cardbox qbox');
+  const t = q.totals;
+  box.append(kvBlock([['공급기업', q.supplier.name], ['수신', q.to], ['견적일', q.date], ['견적번호', q.number], ['부가세', q.vat],
+    ['합계', t.total !== '' ? won(t.total) : t.supply !== '' ? won(t.supply) + ' (공급가)' : '']]));
+  if (!q.items.length){ box.append(el('div','rnote','품목을 읽지 못했습니다. 견적서 내용을 텍스트로 붙여 넣어 보세요.')); return box; }
+  const sel = (id, label, opts, value) => {
+    const f = el('div','sf'), l = el('label', null, label); l.htmlFor = id;
+    const s = document.createElement('select'); s.id = id;
+    for (const [v, t2] of opts) s.append(new Option(t2, v));
+    s.value = value; f.append(l, s); box.append(f); return s;
+  };
+  const sups = [...state.accounts.entries()].filter(([, a]) => a.type === 'supplier').sort((x, y) => x[1].name.localeCompare(y[1].name, 'ko'));
+  const supMatch = sups.find(([, a]) => q.supplier.name && normOrg(a.name) === normOrg(q.supplier.name));
+  const supSel = sel(idp + '-sup', '공급기업', [['', '공급기업을 고르세요'], ...sups.map(([id, a]) => [id, a.name]),
+    ['__new', '+ 새 공급기업으로 등록' + (q.supplier.name ? ' — ' + q.supplier.name : '') + '…']], supMatch ? supMatch[0] : '');
+  const projs = [...state.projects.entries()].sort((x, y) => projLabel(x[1]).localeCompare(projLabel(y[1]), 'ko'));
+  const projSel = sel(idp + '-proj', '과제 (자산으로 등록)', [['', '(과제 없음 — 장비만 등록)'], ...projs.map(([id, p]) => [id, projLabel(p)])], pid0 || '');
+  supSel.addEventListener('change', () => {
+    if (supSel.value !== '__new') return refresh();
+    supSel.value = '';
+    const s = q.supplier;
+    openAccountForm(null, { type:'supplier', name:s.name, phone:s.tel, address:s.address, addressDetail:s.addressDetail,
+      memo:['견적서에서 등록', s.bizNo && '사업자등록번호 ' + s.bizNo].filter(Boolean).join(' / ') }, aid => {
+      supSel.insertBefore(new Option(state.accounts.get(aid)?.name || s.name, aid), supSel.lastChild);
+      supSel.value = aid; refresh();
+    });
+  });
+  projSel.addEventListener('change', () => refresh());
+  const wrap = el('div','qwrap'), tb = document.createElement('table'); tb.className = 'qtable';
+  const hr = document.createElement('tr');
+  for (const h of ['등록', '구분', '장비', '수량', '단위', '견적 단가', '보드']) hr.append(Object.assign(document.createElement('th'), { textContent:h }));
+  tb.createTHead().append(hr); tb.createTBody();
+  const rows = q.items.map((it, i) => {
+    const tr = document.createElement('tr'), cell = () => tr.appendChild(document.createElement('td'));
+    const chk = document.createElement('input'); chk.type = 'checkbox'; chk.checked = true; chk.setAttribute('aria-label', it.name + ' 등록');
+    const kindSel = document.createElement('select'); kindSel.setAttribute('aria-label','구분');
+    for (const [v, t2] of [['', '?'], ...Object.entries(PRODUCT_KIND)]) kindSel.append(new Option(t2, v));
+    kindSel.value = it.kind;
+    const qtyIn = document.createElement('input'); qtyIn.type = 'number'; qtyIn.min = '1'; qtyIn.value = it.qty === '' ? '' : String(it.qty); qtyIn.setAttribute('aria-label','수량');
+    const unitSel = document.createElement('select'); unitSel.setAttribute('aria-label','단위');
+    for (const u of ['', ...PRODUCT_UNITS]) unitSel.append(new Option(u || '?', u));
+    unitSel.value = it.unit;
+    cell().append(chk);
+    const kc = cell(); kc.append(kindSel); if (it.kindWhy) kc.append(el('div','qsub', it.kindWhy));
+    const nc = cell(); nc.append(el('div', null, (i + 1) + '. ' + [it.name, it.model].filter(Boolean).join(' ')));
+    for (const s of [it.spec, it.note && '비고: ' + it.note]) if (s) nc.append(el('div','qsub', s));
+    const qc = cell(); qc.append(qtyIn); if (it.qty === '') qc.append(el('div','qwarn','수량 확인'));
+    const uc = cell(); uc.append(unitSel); if (it.unitRaw && it.unitRaw !== it.unit) uc.append(el('div','qsub', '원문 ' + it.unitRaw));
+    cell().append(el('div', null, it.unitPrice !== '' ? won(it.unitPrice) : it.priceRaw || '—'));
+    const bc = cell();
+    const r = { it, chk, kindSel, qtyIn, unitSel, bc, upd:null, touched:false };
+    chk.addEventListener('change', () => { r.touched = true; count(); });
+    tb.tBodies[0].append(tr);
+    return r;
+  });
+  wrap.append(tb); box.append(wrap);
+  box.append(el('div','rnote','견적서에 적힌 값만 옮겼습니다. 단가는 장비에, 수량은 자산에 들어가고 자산 상태는 «검토 중»입니다(발주·설치는 자산에서 직접). 월(임차) S/W의 수량은 개월 수입니다.'));
+  const bar = el('div','sendbar'), go = el('button','btn primary'), err = el('div','err'); err.hidden = true;
+  bar.append(go); box.append(bar, err);
+  const count = () => { const n = rows.filter(r => r.chk.checked).length; go.textContent = '선택한 ' + n + '건 등록'; go.disabled = !n || !writable || go.dataset.done === '1'; };
+  function refresh(){
+    const sid = supSel.value, pid = projSel.value;
+    for (const r of rows){
+      const prid = sid ? quoteMatch(sid, r.it) : null, pr = prid && state.products.get(prid);
+      r.bc.replaceChildren(); r.upd = null;
+      r.kindSel.disabled = r.unitSel.disabled = !!pr;   // 기존 장비는 그 장비의 구분·단위를 쓴다
+      if (pr){
+        r.kindSel.value = pr.kind || ''; r.unitSel.value = pr.unit || '';
+        r.bc.append(el('div', null, '기존 장비 사용'));
+        if (r.it.unitPrice !== '' && pr.unitPrice !== r.it.unitPrice){
+          const lb = el('label','qsub'), cb = document.createElement('input'); cb.type = 'checkbox';
+          lb.append(cb, ' 단가 갱신 (' + (won(pr.unitPrice) || '없음') + ' → ' + won(r.it.unitPrice) + ')');
+          lb.title = '장비 단가를 바꾸면 이 장비를 쓰는 다른 과제의 사업비 계산도 함께 바뀝니다';
+          r.bc.append(lb); r.upd = cb;
+        }
+      } else { r.kindSel.value = r.it.kind; r.unitSel.value = r.it.unit; r.bc.append(el('div', null, '새 장비')); }
+      if (pid && prid && assetsWhere(a => a.projectId === pid && a.productId === prid).length){
+        r.bc.append(el('div','qwarn','이 과제에 이미 자산 있음'));
+        if (!r.touched) r.chk.checked = false;
+      } else if (!r.touched) r.chk.checked = true;
+    }
+    count();
+  }
+  go.addEventListener('click', () => {
+    const say = t => { err.textContent = t; err.hidden = !t; };
+    const sid = supSel.value, pid = projSel.value, pick = rows.filter(r => r.chk.checked);
+    if (!state.accounts.has(sid)) return say('공급기업을 고르거나 새로 등록하세요.');
+    const bad = pick.find(r => !r.kindSel.value || !r.unitSel.value || !/^\d+$/.test(r.qtyIn.value) || Number(r.qtyIn.value) < 1);
+    if (bad) return say(bad.it.name + ': 구분·단위·수량(1 이상)을 확인하세요.');
+    say('');
+    const memo = ['견적서에서 등록', q.date && '견적일 ' + q.date, q.number && '견적번호 ' + q.number, q.vat && '부가세 ' + q.vat].filter(Boolean).join(' · ');
+    let nNew = 0, nOld = 0, nPrice = 0, nAsset = 0;
+    for (const r of pick){
+      const it = r.it;
+      let prid = quoteMatch(sid, it);
+      if (prid){
+        nOld++;
+        if (r.upd?.checked){ const pr = state.products.get(prid); nPrice++;
+          saveProduct(prid, Object.assign({}, pr, { unitPrice:it.unitPrice, memo:[pr.memo, '단가 갱신 ' + today() + ' — ' + memo].filter(Boolean).join('\n') })); }
+      } else {
+        prid = newId('pr'); nNew++;
+        saveProduct(prid, { kind:r.kindSel.value, name:it.name, model:it.model, supplierId:sid, unitPrice:it.unitPrice, unit:r.unitSel.value, spec:it.spec,
+          memo:[memo, it.note && '비고: ' + it.note, it.priceRaw && '단가 원문: ' + it.priceRaw].filter(Boolean).join('\n') });
+      }
+      if (pid){ nAsset++;
+        saveAsset(newId('as'), { projectId:pid, productId:prid, qty:Number(r.qtyIn.value), serial:'', status:'review', orderedAt:'', installedAt:'', operatingAt:'', memo }); }
+    }
+    go.dataset.done = '1';
+    for (const n of box.querySelectorAll('select,input')) n.disabled = true;
+    count(); go.textContent = '등록됨';
+    assistBubble('sys', '등록했습니다: 장비 ' + (nNew + nOld) + '종(새 ' + nNew + ' · 기존 ' + nOld + (nPrice ? ' · 단가 갱신 ' + nPrice : '') + ')'
+      + (pid ? ', ' + projLabel(state.projects.get(pid)) + ' 자산 ' + nAsset + '건(검토 중)' : ', 자산은 등록하지 않음') + '. 발주·설치 상태는 «장비·자산»에서 직접 바꾸세요.');
+  });
+  if (!writable) box.append(el('div','rnote','이 화면은 저장 권한이 없어 등록할 수 없습니다.'));
+  refresh();
+  return box;
+}
 function assistBuild(){
   const p = el('aside','assist'); p.id = 'assist'; p.hidden = true;
   p.setAttribute('role','complementary'); p.setAttribute('aria-label','보드 도우미');
   const hd = el('div','ahead');
   const nw = el('button','btn ghost','새 대화'), cx = el('button','btn ghost','닫기');
-  nw.addEventListener('click', () => { assist.busy?.abort(); assist.turns = []; assist.card = null; assist.lastReview = null; assist.imgs = []; assistThumbs(); assist.log.replaceChildren(); assistIntro(); });
+  nw.addEventListener('click', () => { assist.busy?.abort(); assist.turns = []; assist.card = null; assist.lastReview = null; assist.quote = null; assist.lastKind = ''; assist.imgs = []; assist.pdfs = []; assistThumbs(); assist.log.replaceChildren(); assistIntro(); });
   cx.addEventListener('click', () => assistToggle(false));
   hd.append(el('b', null, '보드 도우미'), el('span','grow'), nw, cx);
   const log = el('div','alog'); assist.log = log;
   const thumbs = el('div','athumbs'); thumbs.hidden = true; assist.thumbs = thumbs;
-  const ta = document.createElement('textarea'); ta.id = 'as-input'; ta.rows = 2; ta.placeholder = '명함 사진 붙여 넣기(Ctrl+V) 또는 «대한정밀 2차 수행일지 써 줘»'; assist.input = ta;
+  const ta = document.createElement('textarea'); ta.id = 'as-input'; ta.rows = 2; ta.placeholder = '명함 사진 붙여 넣기(Ctrl+V) · 견적서 PDF 📎 · «대한정밀 2차 수행일지 써 줘»'; assist.input = ta;
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); assistSend(); } });
   ta.addEventListener('paste', e => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length){ e.preventDefault(); assistAddFiles(fs); } });
   p.addEventListener('dragover', e => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
   p.addEventListener('drop', e => { if (e.dataTransfer?.files?.length){ e.preventDefault(); assistAddFiles(e.dataTransfer.files); } });
-  const fi = document.createElement('input'); fi.type = 'file'; fi.id = 'as-img'; fi.accept = 'image/*'; fi.multiple = true; fi.hidden = true;
+  const fi = document.createElement('input'); fi.type = 'file'; fi.id = 'as-img'; fi.accept = 'application/pdf'; fi.multiple = true; fi.hidden = true;
   fi.addEventListener('change', () => { assistAddFiles(fi.files || []); fi.value = ''; });
-  const att = el('label','btn ghost','📎 사진'); att.htmlFor = fi.id; att.hidden = true; assist.att = att;
+  const att = el('label','btn ghost','📎 첨부'); att.htmlFor = fi.id; att.hidden = true; att.title = '견적서 PDF(사진을 보낼 수 있는 화면이면 명함·견적서 사진도)'; assist.att = att;
   const send = el('button','btn primary','보내기'), stop = el('button','btn ghost','멈추기'); stop.hidden = true;
   send.addEventListener('click', assistSend); stop.addEventListener('click', () => assist.busy?.abort());
   assist.send = send; assist.stop = stop;
@@ -3613,7 +3804,7 @@ function assistBuild(){
   assistCaps();
 }
 function assistIntro(){
-  assistBubble('bot', '할 수 있는 일은 두 가지입니다.\n① 명함 등록 — 명함 사진을 붙여 넣거나(Ctrl+V) 명함 내용을 붙여 넣고 «기관이랑 담당자 등록해 줘»\n② 양식 초안 — «대한정밀 2차 수행일지 써 줘. 오늘 방문에서 … 논의함»처럼 말하면 수행일지(1~4차)·사업계획서·결과보고서 초안을 써서 보여 드립니다. «단계 산출물로 등록»을 누르면 그 단계에 버전으로 남습니다.\n저장·등록은 직접 누르시면 됩니다. 보드와 대화에 없는 내용은 «미확인»으로 둡니다.\n· 사진은 저장하지 않습니다 · 대화할 때마다 이 계정의 Claude 사용량을 씁니다');
+  assistBubble('bot', '할 수 있는 일은 세 가지입니다.\n① 명함 등록 — 명함 사진을 붙여 넣거나(Ctrl+V) 명함 내용을 붙여 넣고 «기관이랑 담당자 등록해 줘»\n② 양식 초안 — «대한정밀 2차 수행일지 써 줘. 오늘 방문에서 … 논의함»처럼 말하면 수행일지(1~4차)·사업계획서·결과보고서 초안을 써서 보여 드립니다. «단계 산출물로 등록»을 누르면 그 단계에 버전으로 남습니다.\n③ 견적서 등록 — 📎로 견적서 PDF를 첨부하고 «이 견적서 읽어 줘». 표에서 공급기업·과제·품목을 확인하고 «선택한 N건 등록»을 누르면 장비와 도입 장비(자산, 검토 중)로 들어갑니다.\n저장·등록은 직접 누르시면 됩니다. 보드와 대화에 없는 내용은 «미확인»으로 둡니다.\n· 사진·PDF는 저장하지 않습니다 · 대화할 때마다 이 계정의 Claude 사용량을 씁니다');
 }
 /** 이 화면이 Claude·사진을 쓸 수 있는지 확인해 알린다(말없이 숨기지 않는다). sampleState: pending → ready | none */
 function assistCaps(){
@@ -3627,10 +3818,11 @@ function assistCaps(){
   assist.send.disabled = !!assist.denied;
   if (assist.capsDone) return;
   assist.capsDone = true;
+  assist.att.hidden = false;   // 견적서 PDF는 사진을 못 보내는 화면에서도 보드가 글자를 뽑아 보낸다
   sampleFn.limits?.().then(l => {
-    if (l?.images){ assist.maxImg = l.images.maxCount; assist.types = l.images.mediaTypes || []; assist.fi.accept = assist.types.join(','); assist.att.hidden = false; return; }
-    assist.input.placeholder = '명함 내용 붙여 넣기 또는 «대한정밀 2차 수행일지 써 줘»';
-    assistBubble('sys', '이 화면에서는 Claude에게 사진을 보낼 수 없습니다(보는 앱이 지원하지 않음). 명함 내용을 텍스트로 붙여 넣어 주세요. 사진 속 글자는 휴대폰 사진 앱의 «텍스트 복사»로 옮길 수 있습니다.');
+    if (l?.images){ assist.maxImg = l.images.maxCount; assist.types = l.images.mediaTypes || []; assist.fi.accept = [...assist.types, 'application/pdf'].join(','); return; }
+    assist.input.placeholder = '명함 내용 붙여 넣기 · 견적서 PDF 📎 · «대한정밀 2차 수행일지 써 줘»';
+    assistBubble('sys', '이 화면에서는 Claude에게 사진을 보낼 수 없습니다(보는 앱이 지원하지 않음). 명함 내용을 텍스트로 붙여 넣어 주세요. 사진 속 글자는 휴대폰 사진 앱의 «텍스트 복사»로 옮길 수 있습니다. 견적서는 PDF로 첨부하면 글자를 읽습니다(스캔본 제외).');
   }).catch(() => {});
 }
 function assistToggle(open = !assist.open){
@@ -4538,6 +4730,33 @@ function loadPdfjs(){
     .then(() => { const lib = window.pdfjsLib; lib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; return lib; })
     .catch(e => { pdfjsLoading = null; throw e; });
 }
+/** PDF 바이트 → {mode:'text'|'image'|'none', pages, pagesChecked, text, images}. 쪽당 평균 글자(한글·영문)가 minLetters보다 적으면
+    글자 없는 PDF(스캔·인쇄 변환본)로 보고 maxImages()장까지 쪽 이미지(PNG)로 바꾼다(0장이면 'none'). 사업계획서 점검·도우미 견적서 공용 */
+async function readPdf(bytes, { minLetters, maxImages, stage = () => {} }){
+  const lib = await loadPdfjs();
+  let pdf;
+  try { pdf = await lib.getDocument({ data:bytes, isEvalSupported:false, disableFontFace:true }).promise; }
+  catch (x){ throw { code:'pdf', message:x && x.name }; }
+  const pages = pdf.numPages;
+  let text = '';
+  for (let n = 1; n <= pages; n++){
+    const tc = await (await pdf.getPage(n)).getTextContent();
+    text += '\n[' + n + '쪽]\n' + tc.items.map(x => (x.str || '') + (x.hasEOL ? '\n' : ' ')).join('');
+  }
+  if ((text.match(/[가-힣A-Za-z]/g) || []).length >= minLetters * pages) return { mode:'text', pages, pagesChecked:pages, text, images:null };
+  const max = Math.min(pages, await maxImages());
+  if (!(max > 0)) return { mode:'none', pages, pagesChecked:0, text:'', images:null };
+  const images = [];
+  for (let n = 1; n <= max; n++){
+    stage('쪽을 이미지로 바꾸는 중… (' + n + '/' + max + ')');
+    const pg = await pdf.getPage(n), vp = pg.getViewport({ scale:1.6 });
+    const c = document.createElement('canvas'); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+    const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
+    await pg.render({ canvasContext:cx, viewport:vp }).promise;
+    images.push(await new Promise(ok => c.toBlob(ok, 'image/png')));
+  }
+  return { mode:'image', pages, pagesChecked:max, text:'', images };
+}
 
 function editPlanDoc(id, docId, fn){
   const np = structuredClone(state.projects.get(id));
@@ -4655,35 +4874,13 @@ async function runPlanCheck(id, docId){
     if (aiItems.length){
       if (!sampleFn || sampleDenied) note = 'Claude 점검을 쓸 수 없는 화면이라 문서 항목은 «미확인»으로 두었습니다 — 직접 판정하세요.';
       else {
-        const lib = await loadPdfjs();
         const blob = await fetchBlob('/_blob/' + docId);
-        let pdf;
-        try { pdf = await lib.getDocument({ data:new Uint8Array(await blob.arrayBuffer()), isEvalSupported:false, disableFontFace:true }).promise; }
-        catch (x){ throw { code:'pdf', message:x && x.name }; }
-        pages = pdf.numPages;
-        let text = '';
-        for (let n = 1; n <= pages; n++){
-          const tc = await (await pdf.getPage(n)).getTextContent();
-          text += '\n[' + n + '쪽]\n' + tc.items.map(x => (x.str || '') + (x.hasEOL ? '\n' : ' ')).join('');
-        }
-        let images = null;
-        if ((text.match(/[가-힣A-Za-z]/g) || []).length >= PLAN_MIN_LETTERS * pages){ mode = 'text'; pagesChecked = pages; }
-        else {
-          const lim = await sampleFn.limits().catch(() => null);
-          if (!lim || !lim.images){ note = '글자를 읽을 수 없는 PDF입니다(스캔·인쇄 변환본). 한글·소상공인24에서 «PDF로 저장»으로 다시 받아 등록하세요. 문서 항목은 «미확인»으로 두었습니다.'; }
-          else {
-            mode = 'image'; pagesChecked = Math.min(pages, lim.images.maxCount); images = [];
-            for (let n = 1; n <= pagesChecked; n++){
-              stage('쪽을 이미지로 바꾸는 중… (' + n + '/' + pagesChecked + ')');
-              const pg = await pdf.getPage(n), vp = pg.getViewport({ scale:1.6 });
-              const c = document.createElement('canvas'); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
-              const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
-              await pg.render({ canvasContext:cx, viewport:vp }).promise;
-              images.push(await new Promise(ok => c.toBlob(ok, 'image/png')));
-            }
-            text = '';
-          }
-        }
+        const d = await readPdf(new Uint8Array(await blob.arrayBuffer()), { minLetters:PLAN_MIN_LETTERS, stage,
+          maxImages:async () => (await sampleFn.limits().catch(() => null))?.images?.maxCount || 0 });
+        pages = d.pages;
+        const text = d.text, images = d.images;
+        if (d.mode === 'none') note = '글자를 읽을 수 없는 PDF입니다(스캔·인쇄 변환본). 한글·소상공인24에서 «PDF로 저장»으로 다시 받아 등록하세요. 문서 항목은 «미확인»으로 두었습니다.';
+        else { mode = d.mode; pagesChecked = d.pagesChecked; }
         if (mode !== 'board'){
           stage('Claude가 판정하는 중… (수십 초 걸릴 수 있습니다)');
           try {

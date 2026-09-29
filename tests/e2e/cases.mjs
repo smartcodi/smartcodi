@@ -613,7 +613,8 @@ export async function case2(run){
     if (!(await page.locator('#assistBtn').isVisible())) fail('도우미 버튼이 안 보임(사진 불가 화면)');
     await page.locator('#assistBtn').click();
     await hasText(page.locator('#assist .abub.sys'), '사진을 보낼 수 없습니다');
-    if (await page.locator('#assist label', { hasText:'사진' }).isVisible()) fail('사진 첨부 버튼이 보임');
+    if ((await page.locator('#as-img').getAttribute('accept')) !== 'application/pdf') fail('사진 불가 화면인데 이미지 첨부 가능: ' + await page.locator('#as-img').getAttribute('accept'));
+    if (!(await page.locator('#assist label', { hasText:'첨부' }).isVisible())) fail('견적서 PDF 첨부 버튼이 안 보임');
     if ((await page.locator('#as-input').getAttribute('placeholder')).includes('Ctrl+V')) fail('입력칸 안내가 사진 붙여 넣기 그대로');
     if (await page.locator('#assist').getByRole('button', { name:'보내기' }).isDisabled()) fail('텍스트는 보낼 수 있어야 함');
     await reopen({ noSample:true });
@@ -688,6 +689,58 @@ export async function case2(run){
       await hasText(stepBody(page, 8).locator('.diag .subhead').first(), '현장진단표 항목 (4차)');
       await hasText(stepBody(page, 8).locator('.forms'), '수행일지·현장진단표 (4차)');
       await H.closeDrawer(page);
+    } finally { await closeAssist(); }
+  });
+  await run.step('C2-33', async () => {
+    // 도우미에 견적서 PDF 첨부 → 표(공급기업·과제 자동 선택, 기존 장비·이미 있는 자산 표시) → «선택한 2건 등록» → 장비·자산(검토 중) 저장, 기존 단가 그대로
+    try {
+      await tab(page, 'board');
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const pg = await page.context().newPage();
+      await pg.setContent(`<html><body style="font-family:'Malgun Gothic',sans-serif"><h1>견 적 서</h1>
+        <p>공급자: ${SUP} · 수신: ${CO} 귀하 · 견적일 2026-10-02 · 견적번호 Q-TEST-01 · 부가세 별도</p>
+        <p>1. CNC 레이저 용접 시스템 1대 41,000,000 / 2. [테스트] 견적 계량기 QT-100 2대 1,500,000 / 3. [테스트] 견적 MES QM-1 3개월 400,000</p>
+        <p>표식 문장: 견적서 텍스트 추출 확인용.</p></body></html>`);
+      const file = path.join(HERE, 'results', 'quote.pdf');
+      await pg.pdf({ path:file, format:'A4' }); await pg.close();
+      await page.locator('#as-img').setInputFiles(file);
+      await until(async () => (await page.locator('#assist .athumb', { hasText:'quote.pdf' }).count()) === 1, 'PDF가 첨부 목록에 안 붙음');
+      const before = await page.evaluate(() => window.__mock.samples.length);
+      const n0 = await page.locator('#assist .qbox').count();
+      await page.locator('#as-input').fill('이 견적서 읽어 줘'); await page.locator('#as-input').press('Enter');
+      try { await until(async () => (await page.locator('#assist .qbox').count()) > n0, '견적서 표가 안 뜸', 20000); }
+      catch (e){ fail('견적서 표가 안 뜸 / 마지막 말풍선: ' + (await page.locator('#assist .abub').last().innerText().catch(() => '?')).slice(0, 200)); }
+      const c = await page.evaluate(i => window.__mock.samples[i], before);
+      if (c.images !== 0 || !c.prompt.includes('[견적서 PDF: quote.pdf') || !c.prompt.includes('견적서 텍스트 추출 확인용')) fail('PDF 텍스트 전달: 이미지 ' + c.images);
+      const box = page.locator('#assist .qbox').last();
+      const supId = await findId(page, 'accounts', d => d.name === SUP), pid = await projectId(page, CO);
+      if ((await box.locator('select[id$="-sup"]').inputValue()) !== supId) fail('공급기업 자동 선택 안 됨');
+      if ((await box.locator('select[id$="-proj"]').inputValue()) !== pid) fail('과제 자동 선택 안 됨');
+      const cnc = box.locator('tbody tr', { hasText:'CNC 레이저 용접 시스템' });
+      await hasText(cnc, '기존 장비 사용'); await hasText(cnc, '단가 갱신'); await hasText(cnc, '이 과제에 이미 자산 있음');
+      if (await cnc.locator('input[type=checkbox]').first().isChecked()) fail('이미 자산이 있는 품목이 선택됨');
+      await hasText(box.locator('tbody tr', { hasText:'견적 계량기' }), '새 장비');
+      const cncId = await findId(page, 'products', d => d.name === 'CNC 레이저 용접 시스템');
+      const nProd = Object.keys(await docsOf(page, 'products')).length;
+      await box.getByRole('button', { name:'선택한 2건 등록' }).click();
+      await hasText(page.locator('#assist .abub.sys').last(), '등록했습니다');
+      const meterId = await until(() => findId(page, 'products', d => d.name === '[테스트] 견적 계량기'), '새 장비 저장 안 됨');
+      const mesId = await until(() => findId(page, 'products', d => d.name === '[테스트] 견적 MES'), '새 장비(S/W) 저장 안 됨');
+      await until(async () => Object.values(await docsOf(page, 'assets')).filter(a => a.projectId === pid && [meterId, mesId].includes(a.productId)).length === 2, '자산 2건 저장 안 됨');
+      const prods = await docsOf(page, 'products'), assets = Object.values(await docsOf(page, 'assets'));
+      const m = prods[meterId], s = prods[mesId];
+      if (m.supplierId !== supId || m.unitPrice !== 1500000 || m.kind !== 'hw' || m.unit !== '대' || m.model !== 'QT-100') fail('계량기 장비: ' + JSON.stringify(m));
+      if (s.kind !== 'sw' || s.unit !== '월(임차)' || s.unitPrice !== 400000 || !s.memo.includes('견적번호 Q-TEST-01')) fail('MES 장비: ' + JSON.stringify(s));
+      if (Object.keys(prods).length !== nProd + 2) fail('장비 수가 ' + (Object.keys(prods).length - nProd) + '개 늘어남(기대 2)');
+      const am = assets.find(a => a.productId === meterId), as2 = assets.find(a => a.productId === mesId);
+      if (am.qty !== 2 || am.status !== 'review' || as2.qty !== 3 || as2.status !== 'review') fail('자산: ' + JSON.stringify([am, as2]));
+      if (prods[cncId].unitPrice !== 42000000) fail('기존 장비 단가가 바뀜: ' + prods[cncId].unitPrice);
+      if (assets.filter(a => a.projectId === pid && a.productId === cncId).length !== 1) fail('기존 자산이 중복 등록됨');
+      if (!(await box.getByRole('button', { name:'등록됨' }).isDisabled())) fail('등록 뒤 버튼이 다시 눌림');
+      // 대화로 «등록해 줘» → 표의 버튼을 안내만(자동 저장 안 함)
+      await page.locator('#as-input').fill('등록해 줘'); await page.locator('#as-input').press('Enter');
+      await hasText(page.locator('#assist .abub.sys').last(), '견적서는 위 표에서');
     } finally { await closeAssist(); }
   });
   await run.step('C2-32', async () => {
@@ -780,7 +833,7 @@ export async function case2(run){
     await H.closeModals(page);
   });
   await run.step('C2-13', async () => {
-    await cleanupCase(page, { company:CO, products:['CNC 레이저 용접 시스템', 'ProdEX AI Smart'], contacts:[REP, SALES], accounts:[CO, SUP] });
+    await cleanupCase(page, { company:CO, products:['CNC 레이저 용접 시스템', 'ProdEX AI Smart', '[테스트] 견적 계량기', '[테스트] 견적 MES'], contacts:[REP, SALES], accounts:[CO, SUP] });
   });
 }
 

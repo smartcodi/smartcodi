@@ -150,7 +150,7 @@
     const images = opts.images ? [].concat(opts.images).length : 0;
     samples.push({ prompt, images, modelTier: opts.modelTier || 'default' });
     await new Promise(ok => setTimeout(ok, 50));
-    // 보드 도우미(대화): 마지막 사용자 말의 첫 줄로 흉내 — 등록해/네 → register, 공급기업 → 유형 정정, 과제 → 못 함, 그 밖 → 명함 읽기
+    // 보드 도우미(대화): 마지막 사용자 말의 첫 줄로 흉내 — 견적서 PDF → quote, 등록해/네 → register, 공급기업 → 유형 정정, 과제 → 못 함, 그 밖 → 명함 읽기
     // 양식 초안 작성: [칸 목록]의 key마다 채움. 사용자가 알려 준 «용접 불량 원인»이 프롬프트에 있으면 반영(근거 전달 확인용)
     if (prompt.startsWith('[작성]')){
       const told = prompt.includes('용접 불량 원인') ? ' · 용접 불량 원인 논의 반영' : '';
@@ -159,7 +159,22 @@
       return { cells, questions:['(목) 수행시간을 알려 주세요'] };
     }
     if (prompt.includes('[도우미]')){
-      const last = (Array.isArray(input) ? input[input.length - 1].content : prompt).split(/\r?\n/)[0];
+      const lastFull = Array.isArray(input) ? input[input.length - 1].content : prompt;
+      const last = lastFull.split(/\r?\n/)[0];
+      // 견적서 PDF(보드가 뽑은 텍스트): «공급자: …»와 과제 목록의 업체명으로 공급기업·과제를 흉내, 품목은 고정(기존 장비 1 + 새 장비 2)
+      if (lastFull.includes('[견적서 PDF')){
+        const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));
+        const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => lastFull.includes(co));
+        const sup = (lastFull.match(/공급자:\s*(.+?)\s*·/) || [])[1] || '';
+        return { reply:'(목) 견적서를 읽었습니다: ' + sup + ' · 3품목. 아래 표에서 확인하고 등록을 눌러 주세요.', card:null, action:'none', projectId: proj ? proj[1] : '',
+          quote:{ supplier:{ name:sup, tel:'02-000-8888', address:'', addressDetail:'', bizNo:'' }, to: proj ? proj[2] : '', date:'2026-10-02', number:'Q-TEST-01', vat:'별도',
+            totals:{ supply:'45,200,000', vat:'', total:'' },
+            items:[
+              { kind:'hw', kindWhy:'(목) 설비', name:'CNC 레이저 용접 시스템', model:'', spec:'', unit:'대', unitRaw:'대', qty:1, unitPrice:'41,000,000', amount:'41,000,000', note:'' },
+              { kind:'hw', kindWhy:'(목) 계측 장비', name:'[테스트] 견적 계량기', model:'QT-100', spec:'(목) 0~30kg', unit:'대', unitRaw:'EA', qty:'2', unitPrice:'1,500,000', amount:'3,000,000', note:'' },
+              { kind:'sw', kindWhy:'(목) 월 구독 SW', name:'[테스트] 견적 MES', model:'QM-1', spec:'', unit:'월(임차)', unitRaw:'개월', qty:3, unitPrice:400000, amount:1200000, note:'(목) 설치 교육 포함' },
+            ] } };
+      }
       if (/수행일지|사업계획서|결과보고서|다시 써/.test(last)){
         const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));   // 과제 목록 절만(규칙 문장·양식 목록과 섞이지 않게)
         const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => last.includes(co));

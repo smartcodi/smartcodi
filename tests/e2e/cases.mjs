@@ -945,6 +945,109 @@ export async function case2(run){
       if (p1.steps['2'].status !== st0.status || p1.currentStep !== p0.currentStep) fail('단계 상태·현재 단계가 바뀜');
     } finally { await closeAssist(); await H.closeDrawer(page); }
   });
+  await run.step('C2-38', async () => {
+    // 예정일 잡기: 말한 일정 → 카드(날짜·요일 크게, 변경 전 → 후, 시각은 메모) → «예정일 저장» → «캘린더에 등록»(create_event, 활동) → 날짜 바꿔 «캘린더 날짜 수정»(update_event).
+    // 날짜 없음·과제 모름은 카드 없이 되묻기, 지난 날짜는 경고, «모레»는 규칙 턴의 [오늘]로 계산. 단계 상태·currentStep 그대로
+    try {
+      await H.setPlanned(page, CO, 7, '');
+      await H.closeDrawer(page);
+      const pid = await projectId(page, CO);
+      const p0 = (await docsOf(page, 'projects'))[pid], st0 = p0.steps['7'];
+      const T = await page.evaluate('today()'), d1 = await page.evaluate("addDays(today(), 16)"), d2 = await page.evaluate("addDays(today(), 21)");
+      const dow = d => page.evaluate(x => withDow(x), d);
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      await hasText(page.locator('#assist .abub.bot').first(), '일곱 가지');
+      const say = async text => {
+        const before = await page.evaluate(() => window.__mock.samples.length);
+        const n0 = await page.locator('#assist .plbox').count();
+        await page.locator('#as-input').fill(text); await page.locator('#as-input').press('Enter');
+        try { await until(async () => (await page.locator('#assist .plbox').count()) > n0, '일정 카드가 안 뜸', 15000); }
+        catch (e){ fail('일정 카드가 안 뜸: ' + text + ' / 마지막 말풍선: ' + (await page.locator('#assist .abub').last().innerText().catch(() => '?')).slice(0, 200)); }
+        return { c:await page.evaluate(i => window.__mock.samples[i], before), box:page.locator('#assist .plbox').last() };
+      };
+      const { c, box } = await say(CO + ' 3차 방문 ' + d1 + ' 오후 2시로 잡혔어');
+      for (const t of ['예정일 잡기 규칙', '[오늘] ' + await dow(T), '[날짜 참고]', '날짜를 짐작하지 않습니다', '[현재 일정 제안] 없음']) if (!c.prompt.includes(t)) fail('규칙 턴에 없음: ' + t);
+      await hasText(box.locator('.pldate'), await dow(d1));
+      await hasText(box, '7. 3차 방문');
+      await hasText(box.locator('.plold'), '지금 예정일 없음');
+      await hasText(box, '시간은 메모, 캘린더는 종일');
+      if (await box.locator('.plwarn').count()) fail('미래 날짜에 지난 날짜 경고');
+      if (await box.getByRole('button', { name:'캘린더에 등록' }).isVisible()) fail('예정일 저장 전에 캘린더 버튼이 보임');
+      await box.getByRole('button', { name:'예정일 저장' }).click();
+      await until(async () => (await stepOf(7)).planned === d1, '예정일 저장 안 됨');
+      await hasText(page.locator('#assist .abub.sys').last(), '바꾸지 않았습니다');
+      await box.getByRole('button', { name:'단계 메모로도 저장' }).click();
+      await until(async () => ((await stepOf(7)).notes || []).some(x => x.text.startsWith('(일정)') && x.text.includes('오후 2시')), '일정 원문이 단계 메모로 안 남음');
+      await box.getByRole('button', { name:'캘린더에 등록' }).click();
+      await until(() => box.getByRole('link', { name:'캘린더 등록됨 ↗' }).count(), '«캘린더 등록됨»으로 안 바뀜');
+      const evs = () => page.evaluate(() => window.__mock.events()).then(o => Object.values(o).filter(e => e.summary === '[스마트제조] ' + CO + ' · 7. 3차 방문'));
+      const ev1 = (await evs())[0];
+      if (!ev1 || ev1.startTime !== d1 + 'T00:00:00' || ev1.allDay !== true || ev1.timeZone !== 'Asia/Seoul') fail('캘린더 이벤트: ' + JSON.stringify(ev1));
+      const acts = () => docsOf(page, 'projects').then(d => (d[pid].activities || []).filter(a => a.channel === 'calendar' && a.step === 7));
+      if (!(await acts()).some(a => a.eventId === ev1.id && a.date === d1)) fail('캘린더 등록 활동 없음');
+      // 날짜 변경: 변경 전 → 후 표시 → 저장 → «캘린더 날짜 수정»(update_event, 활동에 «날짜 변경»)
+      const r2 = await say(CO + ' 3차 방문 ' + d2 + '로 다시 잡혔어');
+      await hasText(r2.box.locator('.plold'), '변경 전 ' + await dow(d1) + ' → 후 ' + await dow(d2));
+      await hasText(r2.box, '등록돼 있음');
+      await r2.box.getByRole('button', { name:'예정일 저장' }).click();
+      await until(async () => (await stepOf(7)).planned === d2, '바뀐 예정일 저장 안 됨');
+      await r2.box.getByRole('button', { name:'캘린더 날짜 수정 (' + d1 + ' → ' + d2 + ')' }).click();
+      await until(async () => (await evs())[0]?.startTime === d2 + 'T00:00:00', '캘린더 이벤트 날짜가 안 바뀜');
+      if ((await evs()).length !== 1) fail('날짜 수정인데 이벤트가 새로 생김');
+      if (!(await acts()).some(a => (a.subject || '').includes('날짜 변경 ' + d1 + ' → ' + d2))) fail('날짜 변경 활동 없음');
+      await until(() => r2.box.getByRole('link', { name:'캘린더 등록됨 ↗' }).count(), '날짜 수정 뒤 «캘린더 등록됨»으로 안 바뀜');
+      // «모레» = 규칙 턴 [오늘] + 2일, 지난 날짜는 경고(저장 안 함)
+      const r3 = await say(CO + ' 4차 방문 모레로 잡혔어');
+      await hasText(r3.box.locator('.pldate'), await dow(await page.evaluate("addDays(today(), 2)")));
+      await hasText(r3.box, '8. 4차 방문');
+      const r4 = await say(CO + ' 4차 방문 2020-01-06로 잡혔어');
+      await hasText(r4.box.locator('.plwarn'), '이전 날짜');
+      // 날짜를 말하지 않음·없는 날짜·과제 모름 → 카드 없이 되묻기
+      const n0 = await page.locator('#assist .plbox').count();
+      const ask = async (text, want) => {
+        await page.locator('#as-input').fill(text); await page.locator('#as-input').press('Enter');
+        await hasText(page.locator('#assist .abub.sys').last(), want);
+      };
+      await ask(CO + ' 4차 방문 잡혔어, 날짜는 미정', '날짜를 알 수 없어');
+      await ask(CO + ' 4차 방문 2026-02-30로 잡혔어', '날짜로 읽지 못했습니다');
+      await ask('3차 방문 ' + d1 + '로 잡혔어', '어느 과제의 일정인지');
+      if ((await page.locator('#assist .plbox').count()) !== n0) fail('되물어야 할 때 일정 카드가 뜸');
+      const p1 = (await docsOf(page, 'projects'))[pid];
+      if (p1.steps['7'].status !== st0.status || p1.currentStep !== p0.currentStep) fail('단계 상태·현재 단계가 바뀜: ' + st0.status + '→' + p1.steps['7'].status + ', ' + p0.currentStep + '→' + p1.currentStep);
+      if (p1.steps['8'].planned !== p0.steps['8'].planned) fail('저장하지 않은 8단계 예정일이 바뀜');
+    } finally { await closeAssist(); await H.closeDrawer(page); }
+  });
+  await run.step('C2-39', async () => {
+    // 예정일 잡기, 캘린더 커넥터(mcp) 없음: «예정일 저장» 뒤 등록 버튼 대신 구글 캘린더 «일정 만들기» 링크(종일). 이벤트는 만들어지지 않음
+    try {
+      await H.closeDrawer(page);
+      const pid = await projectId(page, CO);
+      const d = await page.evaluate("addDays(today(), 30)"), d1 = await page.evaluate("addDays('" + d + "', 1)");
+      const n0 = Object.keys(await page.evaluate(() => window.__mock.events())).length;
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      await page.evaluate(() => { window.__mcp0 = mcp; mcp = null; });
+      try {
+        const c0 = await page.locator('#assist .plbox').count();
+        await page.locator('#as-input').fill(CO + ' 4차 방문 ' + d + '로 잡혔어'); await page.locator('#as-input').press('Enter');
+        await until(async () => (await page.locator('#assist .plbox').count()) > c0, '일정 카드가 안 뜸', 15000);
+        const box = page.locator('#assist .plbox').last();
+        await hasText(box.locator('.pldate'), d);
+        if (await box.locator('a, button').filter({ hasText:'캘린더' }).count()) fail('예정일 저장 전에 캘린더 버튼·링크가 보임');
+        await box.getByRole('button', { name:'예정일 저장' }).click();
+        await until(async () => (await docsOf(page, 'projects'))[pid].steps['8'].planned === d, '예정일 저장 안 됨');
+        const a = box.getByRole('link', { name:'구글 캘린더에 추가 ↗' });
+        await until(() => a.count(), '«구글 캘린더에 추가» 링크가 안 뜸');
+        const href = await a.getAttribute('href');
+        for (const t of ['calendar.google.com/calendar/render', 'action=TEMPLATE', 'dates=' + d.replace(/-/g, '') + '/' + d1.replace(/-/g, ''), encodeURIComponent('[스마트제조] ' + CO + ' · 8. 4차 방문')]) if (!href.includes(t)) fail('링크에 없음: ' + t + ' / ' + href);
+        if (await box.getByRole('button', { name:'캘린더에 등록' }).count()) fail('mcp 없는데 «캘린더에 등록» 버튼이 있음');
+      } finally { await page.evaluate(() => { mcp = window.__mcp0; }); }
+      if (Object.keys(await page.evaluate(() => window.__mock.events())).length !== n0) fail('mcp 없는데 캘린더 이벤트가 만들어짐');
+      await closeAssist();   // 도우미가 상세 패널을 가리지 않게
+      await H.setPlanned(page, CO, 8, '');
+    } finally { await closeAssist(); await H.closeDrawer(page); }
+  });
   await run.step('C2-32', async () => {
     // 화면 구성: 위 탭 7개(묶음) + 보기 전환 칩 · 기관별 보기에서 담당자 펼침·검색 강조 · 통합 검색으로 담당자 상세
     await H.closeDrawer(page);
@@ -1098,13 +1201,13 @@ export async function case3(run){
     const row = todaySec(page, '그 뒤 예정').locator('tbody tr', { hasText:CO });
     await row.getByRole('button', { name:'등록', exact:true }).click();
     await until(() => row.locator('a.gcal.on').count(), '«등록됨»으로 안 바뀜');
-    const ev = Object.values(await page.evaluate(() => window.__mock.events()));
+    const ev = Object.values(await page.evaluate(() => window.__mock.events())).filter(e => e.summary.includes(CO));   // 다른 CASE(C2-38)가 만든 이벤트는 뺀다
     if (ev.length !== 1) fail('이벤트 ' + ev.length + '건');
     const acts = (await docsOf(page, 'projects'))[pid].activities || [];
     if (!acts.some(a => a.channel === 'calendar' && a.eventId === ev[0].id && a.by === 'u_tester')) fail('캘린더 활동 기록 없음');
   });
   await run.step('C3-10', async () => {
-    const e = Object.values(await page.evaluate(() => window.__mock.events()))[0];
+    const e = Object.values(await page.evaluate(() => window.__mock.events())).filter(e => e.summary.includes(CO))[0];
     if (e.summary !== '[스마트제조] ' + CO + ' · 6. 장비 공급') fail('제목 ' + e.summary);
     if (e.startTime !== Td(30) + 'T00:00:00' || e.endTime !== Td(31) + 'T00:00:00') fail('날짜 ' + e.startTime + '~' + e.endTime);
     if (e.timeZone !== 'Asia/Seoul' || e.allDay !== true) fail('시간대/종일 ' + e.timeZone + '/' + e.allDay);
@@ -1119,7 +1222,7 @@ export async function case3(run){
   await run.step('C3-12', async () => {
     await tab(page, 'today');
     await todaySec(page, '그 뒤 예정').locator('tbody tr', { hasText:CO }).getByRole('button', { name:'날짜 수정' }).click();
-    await until(async () => Object.values(await page.evaluate(() => window.__mock.events()))[0].startTime === Td(35) + 'T00:00:00', '이벤트 날짜 안 바뀜');
+    await until(async () => Object.values(await page.evaluate(() => window.__mock.events())).filter(e => e.summary.includes(CO))[0].startTime === Td(35) + 'T00:00:00', '이벤트 날짜 안 바뀜');
     const acts = (await docsOf(page, 'projects'))[pid].activities || [];
     if (!acts.some(a => (a.subject || '').includes('날짜 변경 ' + Td(30) + ' → ' + Td(35)))) fail('날짜 변경 활동 없음');
     await tab(page, 'today');

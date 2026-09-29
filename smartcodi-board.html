@@ -267,6 +267,9 @@ main{flex:1 1 auto;overflow:auto;padding:14px 16px 18px;-webkit-overflow-scrolli
 .pgbox .pgsaid{padding-left:20px;color:var(--ink-2);word-break:break-word}
 .pgbox .qitem.pgdone{opacity:.6}
 .pgbox .qitem.pgdone .pgsaid{padding-left:0}
+.plbox .pldate{font-size:20px;font-weight:700;margin:10px 0 2px;font-family:"IBM Plex Mono",monospace}
+.plbox .plold{font-size:12px;color:var(--ink-2)}
+.plbox .plwarn{font-size:12px;color:var(--warn);margin-top:4px}
 .svbox .svco{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding-bottom:6px;border-bottom:1px solid var(--line-soft)}
 .svbox .svco b{font-size:15px}
 .svbox .svline{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12px;padding:5px 0}
@@ -2022,8 +2025,10 @@ function ensureCalWatch(){
 const calRefresh = () => { if (mcp && mcp.invalidate) mcp.invalidate(GCAL, 'list_events').catch(() => {}); };
 function calMsg(cls, text){ state.calMsg = text ? { cls, text } : null; if (state.tab === 'sched') renderSched(); }
 
-async function calRegister(r, btn){
-  if (!db || !writable) return calMsg('bad', '이 화면은 저장 권한이 없어 캘린더 등록 이력을 남길 수 없습니다.');
+/* say = 결과 알림(기본 = 할 일 탭 알림줄, 도우미는 말풍선). 성공하면 true */
+async function calRegister(r, btn, say = calMsg){
+  if (!db || !writable) return say('bad', '이 화면은 저장 권한이 없어 캘린더 등록 이력을 남길 수 없습니다.');
+  const label = btn.textContent;
   btn.disabled = true; btn.textContent = '등록 중…';
   const summary = gcalTitle(r), description = gcalDetails(r);
   try {
@@ -2037,15 +2042,17 @@ async function calRegister(r, btn){
     addActivity(r.id, { step:r.s.n, channel:'calendar', record:'auto', kind:'schedule', date:r.date,
       eventId:ev.id, htmlLink:ev.htmlLink || '', subject:summary, body:description, to:[], attachment:'' });
     calRefresh();
-    calMsg('ok', r.p.company + ' ' + r.s.n + '단계 일정을 ' + r.date + '에 등록했습니다. «보고서 → 연락 이력»에 기록됐습니다.');
+    say('ok', r.p.company + ' ' + r.s.n + '단계 일정을 ' + r.date + '에 등록했습니다. «보고서 → 연락 이력»에 기록됐습니다.');
+    return true;
   } catch (e){
-    btn.disabled = false; btn.textContent = '등록';
-    calMsg('bad', calError(e));
+    btn.disabled = false; btn.textContent = label;
+    say('bad', calError(e));
   }
 }
 
-async function calMove(r, reg, btn){
-  if (!db || !writable) return calMsg('bad', '이 화면은 저장 권한이 없어 캘린더 수정 이력을 남길 수 없습니다.');
+async function calMove(r, reg, btn, say = calMsg){
+  if (!db || !writable) return say('bad', '이 화면은 저장 권한이 없어 캘린더 수정 이력을 남길 수 없습니다.');
+  const label = btn.textContent;
   btn.disabled = true; btn.textContent = '수정 중…';
   try {
     const res = await mcp.callTool(GCAL, 'update_event', { eventId:reg.eventId, allDay:true,
@@ -2056,10 +2063,11 @@ async function calMove(r, reg, btn){
       eventId:ev.id, htmlLink:ev.htmlLink || reg.htmlLink || '', subject:gcalTitle(r) + ' — 날짜 변경 ' + reg.date + ' → ' + r.date,
       body:gcalDetails(r), to:[], attachment:'' });
     calRefresh();
-    calMsg('ok', r.p.company + ' ' + r.s.n + '단계 일정을 ' + reg.date + ' → ' + r.date + '로 옮겼습니다.');
+    say('ok', r.p.company + ' ' + r.s.n + '단계 일정을 ' + reg.date + ' → ' + r.date + '로 옮겼습니다.');
+    return true;
   } catch (e){
-    btn.disabled = false; btn.textContent = '날짜 수정';
-    calMsg('bad', calError(e));
+    btn.disabled = false; btn.textContent = label;
+    say('bad', calError(e));
   }
 }
 
@@ -3387,9 +3395,10 @@ function cardBtn(){
    · quote = 견적서 값(PDF는 보드가 글자를 뽑아 보냄) → 말풍선에 quoteReview(공급기업·과제·품목 표) → «선택한 N건 등록»을 사람이 누른다.
    · action "status" + projectId = 과제 한 건 현황 → 말풍선에 statusCard(보드가 과제 데이터로 만든 읽기 전용 카드 + «과제 열기»).
    · progress = 방문 결과로 끝낸 업무·산출물·완료일 제안 → 말풍선에 progressReview → «선택한 항목 체크»를 사람이 누른다. 단계 상태는 안 바꾼다.
+   · schedule = 잡힌 날짜 → 말풍선에 scheduleReview → «예정일 저장»(사람) → 저장 뒤 «캘린더에 등록/날짜 수정»(사람, calRegister/calMove). 단계 상태는 안 바꾼다.
    대화·이미지·PDF는 이 화면 메모리에만 있고 저장하지 않는다. 첨부는 그 턴에만 보낸다(이전 내용은 명함·견적서 값으로 이어진다).
-   명함·견적서 등록, 양식 초안, 현장진단표, 과제 한 건 현황, 방문 결과 체크 외의 요청은 못 한다고 답하게 한다. 누른 사람의 Claude 사용량을 쓴다. */
-const assist = { open:false, turns:[], card:null, lastReview:null, quote:null, diag:null, progress:null, lastKind:'', imgs:[], pdfs:[], busy:null, maxImg:0, types:[], n:0 };
+   명함·견적서 등록, 양식 초안, 현장진단표, 과제 한 건 현황, 방문 결과 체크, 예정일 잡기 외의 요청은 못 한다고 답하게 한다. 누른 사람의 Claude 사용량을 쓴다. */
+const assist = { open:false, turns:[], card:null, lastReview:null, quote:null, diag:null, progress:null, schedule:null, lastKind:'', imgs:[], pdfs:[], busy:null, maxImg:0, types:[], n:0 };
 const QUOTE_TEXT_MAX = 8000;   // 견적서 PDF 텍스트 상한(자) — 한글 1자 = 3바이트라 규칙·목록과 함께 요청 64KiB 안
 const isPdf = f => !!f && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''));
 let sampleState = 'pending';   // use('sample') 결과: pending → ready | none
@@ -3400,14 +3409,20 @@ function assistRules(){
   const projs = [...state.projects.entries()].slice(0, 100).map(([id, p]) => '- ' + id + ' | ' + p.company + ' | ' + p.cycle + ' | ' + curStepName(p));
   const open = state.openId && state.projects.get(state.openId);
   return [
-    '[도우미] 당신은 «소공인 스마트제조 코디 보드»의 도우미입니다. 할 수 있는 일은 여섯 가지입니다.',
+    '[도우미] 당신은 «소공인 스마트제조 코디 보드»의 도우미입니다. 할 수 있는 일은 일곱 가지입니다.',
     '  (1) 명함(사진·텍스트)을 읽어 기관·담당자 등록 창을 채워 주기',
     '  (2) 과제의 수행일지(1~4차)·사업계획서·결과보고서 초안 쓰기 — 보드 데이터와 사용자가 대화로 알려 준 내용만 근거로',
     '  (3) 견적서(PDF 텍스트·사진)를 읽어 장비·도입 장비(자산) 등록 표를 만들어 주기',
     '  (4) 방문 메모를 그 차수 현장진단표 항목별로 나눠 주기',
     '  (5) 과제 한 건의 현황(현재 단계·다음 예정·남은 업무·미수집 서명·회신 대기·점검 문제) 보여 주기 — 내용은 보드가 과제 데이터로 카드를 만듭니다',
     '  (6) 방문·미팅 결과를 들으면 그 단계에서 끝낸 업무·산출물 체크와 완료일을 제안하기',
-    '저장은 사람이 합니다(등록 창·«단계 산출물로 등록»·«선택한 N건 등록»·«선택한 N칸을 진단표에 넣기»·«선택한 항목 체크» 버튼). 당신이 저장·등록·제출·체크를 마쳤다고 말하지 마세요.',
+    '  (7) 잡힌 일정(방문·납품 등)을 들으면 그 단계 예정일을 제안하기 — 저장 뒤 구글 캘린더 종일 일정 등록은 사람이 버튼으로',
+    '저장은 사람이 합니다(등록 창·«단계 산출물로 등록»·«선택한 N건 등록»·«선택한 N칸을 진단표에 넣기»·«선택한 항목 체크»·«예정일 저장»·«캘린더에 등록» 버튼). 당신이 저장·등록·제출·체크를 마쳤다고 말하지 마세요.',
+    '예정일 잡기 규칙:',
+    '- 사용자가 어느 과제·단계의 날짜가 잡혔다고 하면(«대한정밀 3차 방문 10월 15일 오후 2시로 잡혔어», «세종오토 납품은 다음 주 수요일») schedule을 채웁니다. projectId = [과제 목록]의 id(업체명 → [지금 열린 과제], 모르면 ""로 두고 reply로 되묻기), step = 단계 번호 1~8(«N차 방문»은 1차 = 1, 2차 = 2, 3차 = 7, 4차 = 8. 견적서 = 3, 사업계획서 = 4, 컨설턴트·e나라도움 = 5, 납품·설치 = 6. 모르면 0으로 두고 되묻기).',
+    '- date = YYYY-MM-DD. «다음 주 수요일»·«모레» 같은 상대 날짜는 [오늘]과 [날짜 참고]로 계산합니다. 연도를 말하지 않았으면 [오늘] 이후 가장 가까운 그 날짜. 날짜를 말하지 않았거나(«다음 주쯤», «조만간») 하나로 정할 수 없으면 date는 ""로 두고 reply로 날짜를 되묻습니다. 날짜를 짐작하지 않습니다.',
+    '- time = 사용자가 말한 시각 원문(«오후 2시») 또는 "". 캘린더는 종일 일정만 등록하므로 시각은 메모로만 남습니다. said = 날짜를 말한 사용자 말 원문 그대로 짧게.',
+    '- 단계 상태(대기·진행·완료)는 바꾸지 않습니다. reply에는 «OO N단계 예정일을 YYYY-MM-DD (요일)로 제안합니다. 아래 카드에서 확인하고 저장을 눌러 주세요.» 한두 줄. 고치라고 하면 [현재 일정 제안]을 고친 schedule 전체를 다시 줍니다. 해당 없으면 schedule은 null.',
     '방문 결과 체크 규칙:',
     '- 사용자가 방문·미팅·작업을 마친 결과를 말하면(«2차 방문 오늘 끝남. 개선과제 도출했고 대표 서명 받음») progress를 채웁니다. projectId = [과제 목록]의 id(업체명 → [지금 열린 과제], 모르면 ""로 두고 reply로 되묻기), step = 단계 번호 1~8(«N차 방문»은 1차 = 1, 2차 = 2, 3차 = 7, 4차 = 8. 모르면 0으로 두고 되묻기).',
     '- tasks·docs에는 [단계 업무·산출물]의 그 단계 문구를 글자 그대로 씁니다(한 글자라도 다르면 보드가 버립니다). said = 그 항목이 끝났다는 근거인 사용자 말을 원문 그대로 짧게 따옴.',
@@ -3450,18 +3465,21 @@ function assistRules(){
     '- 사용자가 명함을 주면 card를 채우고, reply에 읽은 요지(기관·유형 추정·이름 직함·연락처)를 두세 줄로 말한 뒤 «등록 창을 열까요?»라고 묻습니다.',
     '- 사용자가 값을 고치라고 하면 [현재 명함]을 고친 card 전체를 다시 줍니다. 고칠 게 없으면 card는 null.',
     '- 사용자가 등록하라고(«네», «등록해 줘» 등) 하면 action "register", card는 null(또는 고친 전체). 명함이 아직 없으면 명함을 달라고 합니다.',
-    '- 명함·견적서 등록, 양식 작성, 현장진단표 나누기, 과제 한 건 현황, 방문 결과 체크 외의 요청(여러 과제 조회·메일 보내기 등)은 아직 못 한다고 짧게 안내합니다.',
+    '- 명함·견적서 등록, 양식 작성, 현장진단표 나누기, 과제 한 건 현황, 방문 결과 체크, 예정일 잡기 외의 요청(여러 과제 조회·메일 보내기 등)은 아직 못 한다고 짧게 안내합니다.',
     '- 아래 [보드의 기존 기관]에 같은 기관이 있으면 reply에 알려 주세요(기존 기관에 담당자만 추가할 수 있음).',
     '답은 JSON 객체 하나: {"reply":"…","card":{"org":"","orgType":"","orgTypeWhy":"","name":"","title":"","mobile":"","tel":"","email":"","kakao":"","address":"","addressDetail":"","website":"","other":""} 또는 null,'
       + '"quote":{"supplier":{"name":"","tel":"","address":"","addressDetail":"","bizNo":""},"to":"","date":"","number":"","vat":"","totals":{"supply":"","vat":"","total":""},'
       + '"items":[{"kind":"","kindWhy":"","name":"","model":"","spec":"","unit":"","unitRaw":"","qty":"","unitPrice":"","amount":"","note":""}]} 또는 null,'
       + '"diag":{"projectId":"","round":1,"items":{"항목명":"값"}} 또는 null,'
-      + '"progress":{"projectId":"","step":2,"tasks":[{"task":"","said":""}],"docs":[{"doc":"","said":""}],"actual":""} 또는 null,"action":"none"|"register"|"draft"|"status","projectId":"","formId":""}',
+      + '"progress":{"projectId":"","step":2,"tasks":[{"task":"","said":""}],"docs":[{"doc":"","said":""}],"actual":""} 또는 null,'
+      + '"schedule":{"projectId":"","step":7,"date":"","time":"","said":""} 또는 null,"action":"none"|"register"|"draft"|"status","projectId":"","formId":""}',
     '', '[양식 목록]', ...DRAFT_FORMS().map(f => '- ' + f.id + ' | ' + f.name + ' | ' + f.step + '단계'),
     '', '[현장진단표 항목] 차수 | 항목명 | 작성 안내 (4차는 3차와 같은 항목)',
     ...[1, 2, 3].flatMap(r => DIAG[r].map(([k, g]) => r + '차 | ' + k + ' | ' + g)),
     '', '[단계 업무·산출물] 단계 | 업무(역할) 또는 산출물 | 문구',
     ...STEPS.flatMap(s => [...ROLE_ORDER.flatMap(r => (s.tasks[r] || []).map(x => s.n + ' | 업무(' + ROLES[r].label + ') | ' + x)), ...s.docs.map(d => s.n + ' | 산출물 | ' + d)]),
+    '', '[오늘] ' + withDow(today()),
+    '[날짜 참고] ' + Array.from({ length:28 }, (_, i) => withDow(addDays(today(), i))).join(', '),
     '', '[과제 목록] id | 업체 | 차수 | 현재 단계', ...(projs.length ? projs : ['(없음)']),
     '', '[지금 열린 과제] ' + (open ? state.openId + ' | ' + open.company + ' | ' + open.cycle : '없음'),
     '', '[보드의 기존 기관]', ...(orgs.length ? orgs : ['(없음)']),
@@ -3505,7 +3523,8 @@ async function assistSend(){
   const ctl = new AbortController(); assist.busy = ctl; assist.stop.hidden = false; assist.send.disabled = true;
   const cur = '[현재 명함] ' + (assist.card ? JSON.stringify(assist.card) : '없음') + '\n[현재 견적서] ' + (assist.quote ? JSON.stringify(assist.quote) : '없음')
     + '\n[현재 진단표 제안] ' + (assist.diag ? JSON.stringify({ projectId:assist.diag.projectId, round:assist.diag.round, items:assist.diag.items }) : '없음')
-    + '\n[현재 체크 제안] ' + (assist.progress ? JSON.stringify({ projectId:assist.progress.projectId, step:assist.progress.step, tasks:assist.progress.tasks, docs:assist.progress.docs, actual:assist.progress.actual }) : '없음');
+    + '\n[현재 체크 제안] ' + (assist.progress ? JSON.stringify({ projectId:assist.progress.projectId, step:assist.progress.step, tasks:assist.progress.tasks, docs:assist.progress.docs, actual:assist.progress.actual }) : '없음')
+    + '\n[현재 일정 제안] ' + (assist.schedule ? JSON.stringify({ projectId:assist.schedule.projectId, step:assist.schedule.step, date:assist.schedule.date, time:assist.schedule.time }) : '없음');
   const hist = assist.turns.slice(-ASSIST_TURNS);
   try {
     // 견적서 PDF: 글자를 뽑아 보낸다. 글자 없는 PDF(스캔본)는 사진을 보낼 수 있는 화면에서만 쪽 이미지로
@@ -3571,13 +3590,28 @@ async function assistSend(){
         prev = progressReview(g, pid, assist.progress.memo, 'ap-' + (++assist.n));
       }
     }
-    const parts = [rev, qrev, drev, srev, prev].filter(Boolean);
+    // 잡힌 일정 → 그 단계 예정일 제안. 과제·단계·날짜를 모르면 카드 없이 되묻는다(날짜를 짐작하지 않음)
+    let crev = null, cnote = '';
+    if (r?.schedule && typeof r.schedule === 'object'){
+      const g = normSchedule(r.schedule);
+      const pid = state.projects.has(g.projectId) ? g.projectId : !g.projectId && state.openId && state.projects.has(state.openId) ? state.openId : '';
+      if (!pid) cnote = '어느 과제의 일정인지 모르겠습니다. 업체명과 차수를 말해 주거나 과제 상세를 연 채로 다시 보내 주세요.';
+      else if (!g.step) cnote = '어느 단계(몇 차 방문·납품 등)의 일정인지 알려 주세요.';
+      else if (!g.date) cnote = (g.dateRaw ? '«' + g.dateRaw + '»은 날짜로 읽지 못했습니다. ' : '날짜를 알 수 없어 예정일을 제안하지 않았습니다. ') + '«10월 15일»·«다음 주 수요일»처럼 날짜를 알려 주세요.';
+      else {
+        const same = assist.schedule && assist.schedule.projectId === pid && assist.schedule.step === g.step;
+        assist.schedule = { projectId:pid, step:g.step, date:g.date, time:g.time, memo:same ? assist.schedule.memo + ' / ' + said : said };
+        crev = scheduleReview(g, pid, assist.schedule.memo);
+      }
+    }
+    const parts = [rev, qrev, drev, srev, prev, crev].filter(Boolean);
     let extra = parts[0] || null;
     if (parts.length > 1){ extra = el('div'); extra.append(...parts); }
     assistBubble('bot', reply, extra);
     if (dnote) assistBubble('sys', dnote);
     if (snote) assistBubble('sys', snote);
     if (pnote) assistBubble('sys', pnote);
+    if (cnote) assistBubble('sys', cnote);
     if (r?.action === 'register'){
       if (assist.lastKind === 'quote') assistBubble('sys', '견적서는 위 표에서 공급기업·과제·품목을 확인하고 «선택한 … 등록»을 직접 눌러 주세요.');
       else if (!assist.lastReview) assistBubble('sys', '아직 읽은 명함이 없습니다. 명함 사진이나 텍스트를 먼저 주세요.');
@@ -4100,12 +4134,77 @@ function progressReview(g, pid, memo, idp){
   count();
   return box;
 }
+/* ---------- 도우미 예정일 잡기: 말한 일정 → 그 단계 예정일 제안 카드 → «예정일 저장»(사람) → 저장 뒤 «캘린더에 등록/날짜 수정»(사람, calRegister/calMove 그대로) ----------
+   날짜는 보드가 유효성을 다시 본다(없는 날짜는 되묻기). 캘린더는 종일 일정만 — 말한 시각은 «단계 메모로도 저장»으로 메모에만.
+   단계 상태(status)·currentStep은 건드리지 않는다. */
+function normSchedule(r){
+  const step = [1, 2, 3, 4, 5, 6, 7, 8].includes(Number(r?.step)) ? Number(r.step) : 0;
+  const dateRaw = String(r?.date || '').trim();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) && isoDate(new Date(dateRaw + 'T00:00:00')) === dateRaw ? dateRaw : '';
+  return { projectId:String(r?.projectId || ''), step, date, dateRaw, time:String(r?.time || '').trim(), said:String(r?.said || '').trim() };
+}
+function scheduleReview(g, pid, memo){
+  const p = state.projects.get(pid), key = String(g.step), s = STEPS[g.step - 1], st = p.steps?.[key] || {};
+  const old = String(st.planned || ''), t = today();
+  const box = el('div','cardbox plbox');
+  box.append(kvBlock([['과제', projLabel(p)], ['단계', s.n + '. ' + s.name + ' · 지금 «' + (STATUS[st.status] || '대기') + '»']]));
+  const big = el('div','pldate', withDow(g.date) + ' ');
+  big.append(el('span','dday ' + (g.date < t ? 'over' : dayDiff(g.date, t) <= 7 ? 'soon' : 'far'), ddayLabel(dayDiff(g.date, t))));
+  box.append(big);
+  box.append(el('div','plold', old && old !== g.date ? '변경 전 ' + withDow(old) + ' → 후 ' + withDow(g.date) : old ? '이미 이 날짜로 저장돼 있습니다' : '지금 예정일 없음'));
+  if (g.date < t) box.append(el('div','plwarn', '오늘(' + withDow(t) + ') 이전 날짜입니다 — 맞는지 확인하세요'));
+  if (g.said) box.append(el('div','rnote', '말한 내용: «' + g.said + '»'));
+  box.append(el('div','rnote', g.time ? '시각 «' + g.time + '» — 시간은 메모, 캘린더는 종일 일정입니다. 시각은 «단계 메모로도 저장»으로 남기세요.' : '캘린더에는 종일 일정으로 올라갑니다.'));
+  const reg0 = registeredEvent(p, g.step);
+  if (reg0) box.append(el('div','rnote', '구글 캘린더: ' + withDow(reg0.date) + '로 등록돼 있음' + (reg0.date !== g.date ? ' — 예정일 저장 뒤 «캘린더 날짜 수정»으로 옮길 수 있습니다' : '')));
+  box.append(el('div','rnote', '예정일만 바꿉니다. 단계 상태는 바꾸지 않습니다.'));
+  const bar = el('div','sendbar'), go = el('button','btn primary', old === g.date ? '이미 저장됨' : '예정일 저장'), mb = el('button','btn ghost','단계 메모로도 저장'), op = el('button','btn ghost','과제 열기');
+  mb.title = '말한 일정 원문을 ' + key + '단계 메모로 남깁니다';
+  const cal = el('div','sendbar'); cal.hidden = true;
+  bar.append(go, mb, op); box.append(bar, cal);
+  const stepOf = np => np.steps[key] = np.steps[key] || { status:'todo', planned:'', actual:'', tasks:{}, docs:{}, notes:[] };
+  const say = (cls, text) => { assistBubble('sys', text); };
+  // 저장된 예정일 기준의 캘린더 버튼: 커넥터가 있으면 등록/날짜 수정(활동으로 남음), 없으면 구글 캘린더 «일정 만들기» 링크
+  const calArea = () => {
+    cal.replaceChildren(); cal.hidden = false;
+    const np = state.projects.get(pid), r = { id:pid, p:np, s, st:np.steps[key], date:g.date };
+    if (!mcp){ cal.append(extLink('btn ghost', '구글 캘린더에 추가 ↗', gcalUrl(r), '구글 캘린더 일정 만들기 화면을 새 탭에서 엽니다(종일)')); return; }
+    const reg = registeredEvent(np, g.step);
+    if (reg && reg.date === g.date){ const a = extLink('btn ghost', '캘린더 등록됨 ↗', reg.htmlLink || 'https://calendar.google.com/', '구글 캘린더에서 보기'); cal.append(a); return; }
+    const b = el('button','btn primary', reg ? '캘린더 날짜 수정 (' + reg.date + ' → ' + g.date + ')' : '캘린더에 등록');
+    b.title = g.date + ' 종일 일정으로 ' + (reg ? '옮깁니다' : '구글 캘린더에 등록합니다');
+    b.addEventListener('click', async () => { if (await (reg ? calMove(r, reg, b, say) : calRegister(r, b, say))) calArea(); });
+    cal.append(b);
+  };
+  go.disabled = !writable || old === g.date;
+  go.addEventListener('click', () => {
+    const np = structuredClone(state.projects.get(pid)), t2 = stepOf(np);
+    go.disabled = true;
+    if (String(t2.planned || '') !== old){ go.textContent = '저장 안 함'; return say('bad', '카드를 띄운 뒤 ' + key + '단계 예정일이 ' + (t2.planned ? withDow(t2.planned) : '빈칸') + '으로 바뀌어 저장하지 않았습니다. 다시 말해 주세요.'); }
+    t2.planned = g.date;
+    save(pid, np);
+    go.textContent = '저장함';
+    say('ok', key + '단계 예정일을 ' + withDow(g.date) + '로 저장했습니다. 단계 상태(«' + (STATUS[t2.status] || '대기') + '»)는 바꾸지 않았습니다.' + (mcp ? ' 캘린더에 올리려면 카드의 «캘린더에 등록»을 누르세요.' : ''));
+    calArea();
+  });
+  if (old === g.date && writable) calArea();
+  mb.addEventListener('click', () => {
+    const np = structuredClone(state.projects.get(pid)), t2 = stepOf(np);
+    t2.notes = t2.notes || [];
+    t2.notes.push(Object.assign({ ts:new Date().toISOString(), text:'(일정) ' + memo }, me ? { by:me } : {}));
+    save(pid, np); mb.disabled = true; mb.textContent = '메모로 저장됨';
+  });
+  mb.disabled = !writable;
+  op.addEventListener('click', () => { assistToggle(false); openStep(pid, g.step); });
+  if (!writable) box.append(el('div','rnote','이 화면은 저장 권한이 없어 저장할 수 없습니다.'));
+  return box;
+}
 function assistBuild(){
   const p = el('aside','assist'); p.id = 'assist'; p.hidden = true;
   p.setAttribute('role','complementary'); p.setAttribute('aria-label','보드 도우미');
   const hd = el('div','ahead');
   const nw = el('button','btn ghost','새 대화'), cx = el('button','btn ghost','닫기');
-  nw.addEventListener('click', () => { assist.busy?.abort(); assist.turns = []; assist.card = null; assist.lastReview = null; assist.quote = null; assist.diag = null; assist.progress = null; assist.lastKind = ''; assist.imgs = []; assist.pdfs = []; assistThumbs(); assist.log.replaceChildren(); assistIntro(); });
+  nw.addEventListener('click', () => { assist.busy?.abort(); assist.turns = []; assist.card = null; assist.lastReview = null; assist.quote = null; assist.diag = null; assist.progress = null; assist.schedule = null; assist.lastKind = ''; assist.imgs = []; assist.pdfs = []; assistThumbs(); assist.log.replaceChildren(); assistIntro(); });
   cx.addEventListener('click', () => assistToggle(false));
   hd.append(el('b', null, '보드 도우미'), el('span','grow'), nw, cx);
   const log = el('div','alog'); assist.log = log;
@@ -4131,7 +4230,7 @@ function assistBuild(){
   assistCaps();
 }
 function assistIntro(){
-  assistBubble('bot', '할 수 있는 일은 여섯 가지입니다.\n① 명함 등록 — 명함 사진을 붙여 넣거나(Ctrl+V) 명함 내용을 붙여 넣고 «기관이랑 담당자 등록해 줘»\n② 양식 초안 — «대한정밀 2차 수행일지 써 줘. 오늘 방문에서 … 논의함»처럼 말하면 수행일지(1~4차)·사업계획서·결과보고서 초안을 써서 보여 드립니다. «단계 산출물로 등록»을 누르면 그 단계에 버전으로 남습니다.\n③ 견적서 등록 — 📎로 견적서 PDF를 첨부하고 «이 견적서 읽어 줘». 표에서 공급기업·과제·품목을 확인하고 «선택한 N건 등록»을 누르면 장비와 도입 장비(자산, 검토 중)로 들어갑니다.\n④ 현장진단표 — «대한정밀 1차 방문 메모: 대표가 "불량이 하루 30개쯤"이라고 함, 기록은 종이 일지…»처럼 메모를 붙여 넣으면 그 차수 진단표 항목별로 나눠 보여 드립니다. «선택한 N칸을 진단표에 넣기»를 누르면 들어갑니다(기존 값은 덮어쓰지 않게 해제로 시작).\n⑤ 과제 현황 — «대한정밀 뭐가 남았어?»처럼 물으면 현재 단계·다음 예정·남은 업무·미수집 서명·회신 대기·점검 문제를 보드 값으로 카드에 보여 드립니다. «과제 열기»로 상세로 갑니다.\n⑥ 방문 결과 체크 — «대한정밀 2차 방문 오늘 끝남. 개선과제 도출했고 대표 서명 받음»처럼 말하면 끝낸 업무·산출물과 완료일을 카드로 보여 드립니다. «선택한 항목 체크»를 누르면 체크됩니다. 끝났다고 말한 것만 제안하고, 단계 상태(완료로 바꾸기)는 과제 상세에서 직접 하세요.\n저장·등록은 직접 누르시면 됩니다. 보드와 대화에 없는 내용은 «미확인»으로 둡니다.\n· 사진·PDF는 저장하지 않습니다 · 대화할 때마다 이 계정의 Claude 사용량을 씁니다');
+  assistBubble('bot', '할 수 있는 일은 일곱 가지입니다.\n① 명함 등록 — 명함 사진을 붙여 넣거나(Ctrl+V) 명함 내용을 붙여 넣고 «기관이랑 담당자 등록해 줘»\n② 양식 초안 — «대한정밀 2차 수행일지 써 줘. 오늘 방문에서 … 논의함»처럼 말하면 수행일지(1~4차)·사업계획서·결과보고서 초안을 써서 보여 드립니다. «단계 산출물로 등록»을 누르면 그 단계에 버전으로 남습니다.\n③ 견적서 등록 — 📎로 견적서 PDF를 첨부하고 «이 견적서 읽어 줘». 표에서 공급기업·과제·품목을 확인하고 «선택한 N건 등록»을 누르면 장비와 도입 장비(자산, 검토 중)로 들어갑니다.\n④ 현장진단표 — «대한정밀 1차 방문 메모: 대표가 "불량이 하루 30개쯤"이라고 함, 기록은 종이 일지…»처럼 메모를 붙여 넣으면 그 차수 진단표 항목별로 나눠 보여 드립니다. «선택한 N칸을 진단표에 넣기»를 누르면 들어갑니다(기존 값은 덮어쓰지 않게 해제로 시작).\n⑤ 과제 현황 — «대한정밀 뭐가 남았어?»처럼 물으면 현재 단계·다음 예정·남은 업무·미수집 서명·회신 대기·점검 문제를 보드 값으로 카드에 보여 드립니다. «과제 열기»로 상세로 갑니다.\n⑥ 방문 결과 체크 — «대한정밀 2차 방문 오늘 끝남. 개선과제 도출했고 대표 서명 받음»처럼 말하면 끝낸 업무·산출물과 완료일을 카드로 보여 드립니다. «선택한 항목 체크»를 누르면 체크됩니다. 끝났다고 말한 것만 제안하고, 단계 상태(완료로 바꾸기)는 과제 상세에서 직접 하세요.\n⑦ 예정일 잡기 — «대한정밀 3차 방문 10월 15일 오후 2시로 잡혔어», «납품은 다음 주 수요일»처럼 말하면 그 단계 예정일을 요일과 함께 카드로 보여 드립니다. «예정일 저장»을 누른 뒤 «캘린더에 등록»으로 구글 캘린더에 종일 일정으로 올립니다(시각은 메모로).\n저장·등록은 직접 누르시면 됩니다. 보드와 대화에 없는 내용은 «미확인»으로 둡니다.\n· 사진·PDF는 저장하지 않습니다 · 대화할 때마다 이 계정의 Claude 사용량을 씁니다');
 }
 /** 이 화면이 Claude·사진을 쓸 수 있는지 확인해 알린다(말없이 숨기지 않는다). sampleState: pending → ready | none */
 function assistCaps(){

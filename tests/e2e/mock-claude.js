@@ -175,6 +175,17 @@
               { kind:'sw', kindWhy:'(목) 월 구독 SW', name:'[테스트] 견적 MES', model:'QM-1', spec:'', unit:'월(임차)', unitRaw:'개월', qty:3, unitPrice:400000, amount:1200000, note:'(목) 설치 교육 포함' },
             ] } };
       }
+      // 잡힌 일정 → 예정일 제안. 날짜: 말 속 YYYY-MM-DD, «모레» = 규칙 턴 [오늘] + 2일(오늘 날짜 전달 확인용), 그 밖엔 ""(보드가 되묻기). 시각 «오후 N시»는 time
+      if (/잡혔|잡았/.test(last)){
+        const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));
+        const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => last.includes(co));
+        const step = /납품/.test(last) ? 6 : { 1:1, 2:2, 3:7, 4:8 }[(last.match(/([1-4])차/) || [])[1]] || 0;
+        const base = (prompt.match(/\n\[오늘\] (\d{4}-\d{2}-\d{2})/) || [])[1];
+        const plus = (d, n) => { const t = new Date(d + 'T00:00:00'); t.setDate(t.getDate() + n); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); };
+        const date = (last.match(/\d{4}-\d{2}-\d{2}/) || [])[0] || (/모레/.test(last) && base ? plus(base, 2) : '');
+        return { reply:'(목) 예정일을 제안합니다. 아래 카드에서 확인하고 저장을 눌러 주세요.', card:null, quote:null, diag:null, progress:null, action:'none',
+          schedule:{ projectId: proj ? proj[1] : '', step, date, time:(last.match(/오[전후]\s*\d{1,2}시(\s*\d{1,2}분)?/) || [''])[0], said:last } };
+      }
       // 방문 결과 → 끝낸 업무·산출물 체크 제안. 일부러 섞음: 이미 체크된 업무, 미래형 근거(«내일 씀»), 문구가 다른 업무·산출물 — 보드의 걸러내기 확인용
       if (/방문 결과|끝남|끝났/.test(last)){
         const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));

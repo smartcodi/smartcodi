@@ -175,6 +175,23 @@
               { kind:'sw', kindWhy:'(목) 월 구독 SW', name:'[테스트] 견적 MES', model:'QM-1', spec:'', unit:'월(임차)', unitRaw:'개월', qty:3, unitPrice:400000, amount:1200000, note:'(목) 설치 교육 포함' },
             ] } };
       }
+      // 방문 메모 → 현장진단표(1차 항목명). 일부러 섞음: 기존 값 있는 칸(⑧), 메모에 없는 숫자(⑤ 5%), 없는 항목명(⑨) — 보드의 걸러내기 확인용
+      if (/방문 메모/.test(last)){
+        const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));
+        const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => last.includes(co));
+        const round = Number((last.match(/([1-4])차/) || [])[1] || 0);
+        return { reply:'(목) 방문 메모를 1차 진단표 5칸으로 나눴습니다. 아래 카드에서 확인하고 넣기를 눌러 주세요.', card:null, quote:null, action:'none',
+          diag:{ projectId: proj ? proj[1] : '', round, items:{
+            '현상청취 (대표자의 말)':'"불량이 하루 30개쯤 나와요"',
+            '③ 현재 기록 방식 수준':'종이 일지',
+            '④ KPI 변수에 따른 기초 데이터 유형':'용접 불량 하루 30개 (대표자 추정)',
+            '⑤ 원인추적가능성':'(목) 불량률 5%',
+            '⑥ 검사방식':'육안 검사',
+            '⑧ 담당 가능 인력':'(목) 새 담당 인력',
+            '⑨ 없는 항목':'(목) 버려져야 함',
+            '⑦ 안전·환경위험':'미확인',
+          } } };
+      }
       if (/수행일지|사업계획서|결과보고서|다시 써/.test(last)){
         const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));   // 과제 목록 절만(규칙 문장·양식 목록과 섞이지 않게)
         const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => last.includes(co));

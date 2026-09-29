@@ -76,6 +76,9 @@ try {
 } catch (e){
   console.log('엑셀 기록 실패(파일이 열려 있으면 닫고 `python write_xlsx.py record <xlsx> ' + json + '` 로 다시 기록):', String(e.stderr || e.message).trim().split('\n').pop());
 }
+// 회차 JSON(YYYYMMDDHHMM.json)은 최근 10개만 남긴다 — 결과는 엑셀에 누적되므로. 다른 파일은 건드리지 않는다
+const runs = fs.readdirSync(path.join(here, 'results')).filter(f => /^\d{12}\.json$/.test(f)).sort();
+for (const f of runs.slice(0, -10)) fs.unlinkSync(path.join(here, 'results', f));
 const all = Object.values(out.cases).flatMap(c => c.results);
 const failed = all.filter(r => r.result !== '통과');
 console.log(failed.length ? `결과: ${failed.length}건 통과 못 함` : '결과: 전부 통과');

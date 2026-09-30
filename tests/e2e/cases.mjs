@@ -1335,6 +1335,46 @@ export async function case2(run){
       if (JSON.stringify(p1.steps?.['6'] || {}) !== JSON.stringify(p0.steps?.['6'] || {}) || p1.currentStep !== p0.currentStep) fail('6단계·현재 단계가 바뀜');
     } finally { await closeAssist(); await H.closeDrawer(page); }
   });
+  await run.step('C2-44', async () => {
+    // 도우미 납품 서류 반영 보강(Q-20260929-09 검수): (1) 자산 없는 과제 → 카드 없이 «견적서 등록부터», 자산·장비 새로 안 만듦
+    // (2) 카드를 띄운 뒤 자산이 바뀌면(시리얼) 선택해도 덮지 않고 «그사이 자산이 바뀌어 반영하지 않았습니다»
+    const EMPTY = '[테스트] C2납품빈과제', ERep = '[테스트] C2빈대표';
+    try {
+      await setupProject(page, { company:EMPTY, cycle:'2026-T3', notice:'main', rep:{ name:ERep, title:'대표' } });
+      await H.closeDrawer(page);
+      const nAsset = Object.keys(await docsOf(page, 'assets')).length, nProd = Object.keys(await docsOf(page, 'products')).length;
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const n0 = await page.locator('#assist .dlbox').count();
+      await page.locator('#as-input').fill(EMPTY + ' 거래명세서: 거래일자 2026-10-06, 품목 CNC 레이저 용접 시스템 1대'); await page.locator('#as-input').press('Enter');
+      await until(() => page.locator('#assist .abub.sys', { hasText:'도입 장비(자산)가 없습니다' }).count(), '자산 없는 과제인데 견적서 안내가 없음', 15000);
+      await hasText(page.locator('#assist .abub.sys').last(), '견적서 등록부터');
+      if ((await page.locator('#assist .dlbox').count()) !== n0) fail('자산이 없는데 카드가 뜸');
+      if (Object.keys(await docsOf(page, 'assets')).length !== nAsset || Object.keys(await docsOf(page, 'products')).length !== nProd) fail('자산·장비가 새로 만들어짐');
+      // (2) CO의 CNC 자산: 카드 뜬 뒤 시리얼을 바꾸고 «시리얼» 칸을 선택해 반영 시도
+      const pid = await projectId(page, CO), prid = await findId(page, 'products', d => d.name === 'CNC 레이저 용접 시스템');
+      const cncEntry = async () => Object.entries(await docsOf(page, 'assets')).find(([, a]) => a.projectId === pid && a.productId === prid);
+      const [aid, a0] = await cncEntry();
+      const nb = await page.locator('#assist .dlbox').count();
+      await page.locator('#as-input').fill(CO + ' 거래명세서: 거래일자 2026-10-06'); await page.locator('#as-input').press('Enter');
+      try { await until(async () => (await page.locator('#assist .dlbox').count()) > nb, '납품 서류 카드가 안 뜸', 20000); }
+      catch (e){ fail('납품 서류 카드가 안 뜸 / 마지막 말풍선: ' + (await page.locator('#assist .abub').last().innerText().catch(() => '?')).slice(0, 200)); }
+      const box = page.locator('#assist .dlbox').last(), cnc = box.locator('.qitem', { hasText:'CNC 레이저 용접 시스템' });
+      await hasText(cnc, '시리얼 (기존 ' + a0.serial);
+      await cnc.locator('.dlrow', { hasText:'시리얼' }).locator('input[type=checkbox]').check();
+      await page.evaluate(([id, serial]) => saveAsset(id, Object.assign({}, state.assets.get(id), { serial })), [aid, 'CNC-CHANGED-BY-OTHER']);
+      await until(async () => (await cncEntry())[1].serial === 'CNC-CHANGED-BY-OTHER', '다른 곳의 시리얼 변경 저장 안 됨');
+      await box.getByRole('button', { name:'선택한 1건 반영' }).click();
+      await hasText(page.locator('#assist .abub.sys').last(), '그사이 자산이 바뀌어 반영하지 않았습니다');
+      await hasText(page.locator('#assist .abub.sys').last(), '0건에');
+      const a1 = (await cncEntry())[1];
+      if (a1.serial !== 'CNC-CHANGED-BY-OTHER' || String(a1.memo || '') !== String(a0.memo || '')) fail('바뀐 자산을 덮었거나 메모를 남김: ' + JSON.stringify(a1));
+    } finally {
+      await closeAssist(); await H.closeDrawer(page);
+      await cleanupCase(page, { company:EMPTY, contacts:[ERep], accounts:[EMPTY] });
+      await tab(page, 'today');
+    }
+  });
   await run.step('C2-32', async () => {
     // 화면 구성: 위 탭 7개(묶음) + 보기 전환 칩 · 기관별 보기에서 담당자 펼침·검색 강조 · 통합 검색으로 담당자 상세
     await H.closeDrawer(page);
@@ -1357,12 +1397,12 @@ export async function case2(run){
     await until(() => page.locator('#acc tbody tr.absub', { hasText:SALES }).count(), '▸를 눌러도 담당자가 안 펼쳐짐');
     await supRow.locator('.abtg').click();
     await until(async () => !(await page.locator('#acc tbody tr.absub', { hasText:SALES }).count()), '▾로 안 접힘');
-    await page.locator('#ab-q').fill('C2영업');
+    await page.locator('#ab-q:visible').fill('C2영업');
     await until(() => page.locator('#acc tbody tr.absub.hit', { hasText:SALES }).count(), '검색으로 담당자가 펼쳐지고 강조되지 않음');
     await page.locator('#acc tbody tr.absub.hit', { hasText:SALES }).click();
     await hasText(page.locator('.drawer .dr-head'), SALES);
     await H.closeDrawer(page);
-    await page.locator('#ab-q').fill('');
+    await page.locator('#ab-q:visible').fill('');
     await page.locator('#acc .subnav [data-key="con"]').click();
     await until(() => page.locator('#con tbody tr', { hasText:SALES }).count(), '담당자 전체 보기에 담당자 표가 없음');
     await tab(page, 'prod'); await page.locator('#prod .subnav [data-key="asset"]').click();

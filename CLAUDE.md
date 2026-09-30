@@ -7,11 +7,15 @@
 
 이 폴더는 서식들이 **언제 누구에 의해 어디까지 진행됐는지**를 관리하고, 2026-09-28부터는 **양식 초안 작성도 지원한다**(사용자 결정, `doc/설계/양식_작성.md`). 초안은 보드에 입력된 값·메모·활동만 근거로 하고, 근거가 없으면 '미확인'으로 둔다 — 없는 내용을 만들지 않는다. 본격적인 서식 본문 작성 원칙은 `doc/참고/CLAUDE.md`가 설명하는 별도 프로젝트(`32_코디네이터_실무`)의 것이다(※ `doc/참고/` 파일들은 현재 이 폴더에 **없다** — 미확인).
 
+**작업본(2026-09-30~):** `C:\workspace\02-automation\smartcodi`는 `C:\Study\smartcodi2`를 복사해 Agent 통합 패키지를 얹은 작업본이다(git 이력은 `origin`에서 이어받음). **이 작업본 안만 수정한다.** 원본 경로는 사용자가 명시적으로 요청할 때만 읽고, 수정하지 않는다.
+
 ## 폴더 구조
 
 ```
-smartcodi2/
+smartcodi/
 ├── CLAUDE.md                       # 이 파일
+├── AGENTS.md                       # Agent 운영 규칙(작업 순서·결정 필요 사항·변경 금지) — «Agent 통합 규칙» 절
+├── agent/                          # system-prompt.md(도우미 원칙 참고용 — 실제 프롬프트는 코드 assistRules) · actions.schema.json(도우미 응답 계약)
 ├── .claude/agents/                 # 에이전트 정의 3개 — «에이전트» 절
 ├── smartcodi-board.html            # 단계관리 웹앱 (단일 파일)
 ├── tools/form-values.mjs           # 보드 과제 → kordoc fill 값 JSON (양식 작성 보조)
@@ -105,6 +109,19 @@ smartcodi2/
 
 - 흐름: `assistant-dev` → `board-tester` → 지적이 있으면 개발 쪽으로 되돌림(SendMessage) → 통과하면 메인 세션이 push·PR·게시 → 사용자가 병합. 에이전트는 브랜치 커밋까지만 하고 push·PR·게시·병합은 하지 않는다. 한 번에 하나씩 돌린다(작업 폴더가 하나, E2E는 gitignore된 `doc/교재`의 PDF를 읽어 worktree에서 전체가 안 돎).
 - 질문지 `doc/작업기록/질문지.md`: 서브에이전트는 사용자에게 직접 못 묻는다 → 에이전트가 «대기»로 올리고, 메인 세션이 AskUserQuestion으로 묻고 답을 적는다.
+
+## Agent 통합 규칙 (2026-09-30)
+
+«Agent» = 보드 도우미다. 별도 서버가 아니라 보드 안의 `sample` 호출(`assistSend`)이고, 실제 프롬프트는 `assistRules()`, 응답 검증은 `norm*()`이다. 도우미 기능 10개(명함·견적서·납품 서류·양식 초안·진단표 나누기·방문 결과 체크·과제 현황·예정일·메일·카톡 문구·회신 요약)는 이미 구현돼 있다 — 새로 만들지 말고 `doc/설계/화면_구성.md` «보드 도우미»를 먼저 읽는다. 운영 규칙은 `AGENTS.md`.
+
+- **문서 우선순위**: `doc/단계_역할_정본.md` → 현재 코드·데이터 모델 → `doc/테스트/`·E2E fixture → `doc/반복업무_정리.md` → `doc/설계/*.md` → 이 파일 → `AGENTS.md` → `agent/system-prompt.md`. 문서와 코드가 다르면 하나를 임의로 고르지 말고 차이와 영향을 보고한다.
+- **응답 계약**: `{reply, card, quote, diag, progress, schedule, mail, delivery, action, projectId, formId}`, `action` = `none|register|draft|status|mail|replysum`. 정본은 `agent/actions.schema.json`이고 `assistRules()`의 JSON 명세·`tests/e2e/mock-claude.js`와 같이 고친다. action 이름을 바꾸지 않는다.
+- **Understand/Propose와 Execute를 섞지 않는다.** 도우미는 제안 카드까지, 저장·발송·일정 등록·자산 변경은 사람이 누르는 기존 경로(`save`·`writeMaster`·`saveAsset`·`addActivity`·`openSend`·`calRegister`/`calMove`)로만. LLM이 DB를 직접 고치는 코드를 만들지 않는다.
+- **도우미는 단계 `status`·`currentStep`을 바꾸지 않는다**(사람이 상태를 바꿀 때의 이동은 «절대 하지 말 것» 참고).
+- **확인 원칙**: 조회·현황·문구·초안·외부 조사는 바로 해도 된다. DB 등록·수정, 캘린더 등록·수정, Gmail 발송, 자산 상태 변경은 사람 확인 후. 실행 결과(메시지 `id`, 이벤트 `id`)를 확인하기 전에는 성공이라 말하지 않는다.
+- **외부 조사**는 기존 데이터가 부족할 때만, 결과를 `[확인된 사실] [출처] [사용자 제공 정보] [추론/제안] [확인 필요]`로 나누고 사용자 확인 없이 사실 데이터로 저장하지 않는다. 공식 자료 우선.
+- **테스트 관점**(E2E CASE1~6 외): 잘못된 업체명, 동일 업체 다중 과제, 날짜 누락, 미래형·부정형, 기존 값 덮어쓰기, connector 실패, 권한 오류, 빈 문서, 숫자 오독, 실제 실행 결과 미확인.
+- 초기 분석 단계에서 사용자가 코드 수정 금지를 요청하면 분석만 한다. 큰 변경은 먼저 계획을 제시한다.
 
 ## 작업 함정 (실제로 겪음)
 

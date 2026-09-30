@@ -1536,6 +1536,47 @@ export async function case2(run){
       if (c1 <= c0) fail('카드 수 이상');
     } finally { await page.evaluate(() => window.__mock.threadError(null)); await closeAssist(); await H.closeDrawer(page); }
   });
+  await run.step('C2-46', async () => {
+    // 도우미 회신 요약 보강: 회신이 둘이면 최신만·6000자 넘으면 앞부분만·원문에 없는 «» 인용은 선택 해제·tool_error도 안내만(재시도 없음)
+    const tid = (await page.evaluate(() => window.__mock.sent()))[0].threadId;
+    const LONG = '[[인용오류]] 재조정 견적은 2,345,000원입니다.\n' + '가'.repeat(6100) + '\nZZTAILZZ';
+    const reads = () => page.evaluate(() => window.__mock.calls.filter(c => c.tool === 'get_thread' && c.input.messageFormat === 'PLAIN_TEXT').length);
+    const sums = () => page.evaluate(() => window.__mock.samples.filter(x => x.prompt.startsWith('[회신 요약]')).length);
+    const ask = async (sel, msg) => {
+      const n = await page.locator(sel).count();
+      await page.locator('#as-input').fill(CO + ' 회신 요약해 줘'); await page.locator('#as-input').press('Enter');
+      await until(async () => (await page.locator(sel).count()) > n, msg, 15000);
+      await until(async () => !(await page.locator('#assist .abub.bot', { hasText:'읽는 중' }).count()) && !(await page.locator('#assist .abub.bot', { hasText:'요약하는 중' }).count()), '읽는 중이 안 끝남', 15000);
+    };
+    try {
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      await page.evaluate(([t, body]) => window.__mock.reply(t, { body }), [tid, LONG]);
+      const s0 = await sums();
+      await ask('#assist .rybox', '회신 요약 카드가 안 뜸');
+      if ((await sums()) !== s0 + 1) fail('요약 호출이 1회가 아님');
+      const sp = await page.evaluate(() => window.__mock.samples.filter(x => x.prompt.startsWith('[회신 요약]')).at(-1).prompt);
+      if (!sp.includes('2,345,000원') || sp.includes('1,234,000원')) fail('회신이 둘일 때 최신 회신이 아님');
+      if (sp.includes('ZZTAILZZ') || !sp.includes('앞 6000자만')) fail('6000자를 넘는 회신이 잘리지 않음');
+      const box = page.locator('#assist .rybox').last();
+      await hasText(box, '앞 6000자만 요약했습니다');
+      const bad = box.locator('.qitem', { hasText:'원문에없는문구' });
+      await hasText(bad.locator('.qwarn'), '인용이 원문과 다름');
+      if (await bad.locator('input[type=checkbox]').isChecked()) fail('원문에 없는 인용 줄이 선택된 채로 시작');
+      // tool_error: 안내만, 재시도 없음, 요약 없음
+      await page.evaluate(() => window.__mock.threadError('tool_error'));
+      const r0 = await reads(), s1 = await sums();
+      await ask('#assist .abub.sys', '읽기 실패 안내가 없음');
+      await hasText(page.locator('#assist .abub.sys').last(), '이 메일 스레드를 읽을 수 없습니다');
+      await page.waitForTimeout(800);
+      if ((await reads()) !== r0 + 1) fail('tool_error 뒤 재시도함: ' + ((await reads()) - r0) + '회');
+      if ((await sums()) !== s1) fail('읽기 실패인데 요약을 부름');
+    } finally {
+      await page.evaluate(() => window.__mock.threadError(null));
+      await page.evaluate(t => { window.__mock.unreply(t); window.__mock.reply(t, { body:'(목) 회신드립니다.' }); }, tid);
+      await closeAssist(); await H.closeDrawer(page);
+    }
+  });
   await run.step('C2-11', async () => {
     m = await openSend(page, CO, 3);
     await chip(m, '공급기업').click();   // 끄기

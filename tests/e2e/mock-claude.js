@@ -177,8 +177,9 @@
     if (prompt.startsWith('[회신 요약]')){
       const body = prompt.slice(prompt.indexOf('\n[회신 본문]') + 1).split('\n').slice(1).join('\n');
       const money = (body.match(/\d{1,3}(?:,\d{3})+원/) || [])[0];
-      return { points:[money ? '(목) 견적 금액 «' + money + '»으로 회신함' : '(목) 회신 요지 — 금액 언급 없음', '(목) 납기 99일 소요 예정임'],
-        asks:['(목) 사업계획서 제출 일정 확인 요청'], quotes: money ? [money] : [] };
+      const pts = [money ? '(목) 견적 금액 «' + money + '»으로 회신함' : '(목) 회신 요지 — 금액 언급 없음', '(목) 납기 99일 소요 예정임'];
+      if (body.includes('[[인용오류]]')) pts.push('(목) 지어낸 인용 «원문에없는문구»');   // 보드가 원문과 대조해 선택 해제하는지 확인용
+      return { points:pts, asks:['(목) 사업계획서 제출 일정 확인 요청'], quotes: money ? [money] : [] };
     }
     if (prompt.includes('[도우미]')){
       const lastFull = Array.isArray(input) ? input[input.length - 1].content : prompt;

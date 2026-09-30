@@ -70,6 +70,13 @@
   };
 
   /* ---------- mcp ---------- */
+  // Gmail 메시지(실측 모양). snippet은 실제처럼 숫자 쉼표를 없앤다 — 보드는 snippet을 근거로 쓰면 안 된다
+  const gmsg = ({ id, threadId, labelIds, sender, toRecipients, subject, body, attachments, at }) => {
+    const t = at || Date.now();
+    return Object.assign({ id, threadId, date:new Date(t).toISOString(), internalDate:String(t), historyId:String(st.seq), labelIds, sender, toRecipients,
+      subject, snippet:String(body).replace(/(\d),(?=\d)/g, '$1').replace(/\s+/g, ' ').slice(0, 120), plaintextBody:body, sizeEstimate:String(body).length + 500,
+      viewUrl:'https://mail.google.com/mail/#all/' + id }, attachments ? { attachments } : {});
+  };
   const watchers = new Set();   // list_events 구독
   const evList = () => Object.values(st.events).map(e => ({
     id:e.id, summary:e.summary, htmlLink:e.htmlLink, status:'confirmed',
@@ -80,15 +87,23 @@
     calls.push({ server, tool, input: clone(input) });
     if (server === 'Gmail' && tool === 'send_message'){
       const id = nid('m'), threadId = nid('t');
-      st.threads[threadId] = { id:threadId, messages:[{ id, internalDate:String(Date.now()), labelIds:['SENT'], sender:'sender@example.com' }] };
+      st.threads[threadId] = { id:threadId, messages:[gmsg({ id, threadId, labelIds:['SENT'], sender:'sender@example.com', toRecipients:[].concat(input.to || []), subject:input.subject || '', body:input.body || '' })] };
       st.sent.push({ id, threadId, to:input.to, subject:input.subject, body:input.body, attachments:(input.attachments || []).map(a => a.filename) });
       save();
       return { payload:{ id, threadId, labelIds:['SENT'] } };
     }
+    // get_thread 응답 모양은 실측(2026-09-30, 질문지 Q-20260929-10) 그대로: camelCase, PLAIN_TEXT면 subject·snippet·plaintextBody 포함, METADATA_ONLY면 제외.
+    // __mock.threadError(code)로 다음 get_thread 호출들을 실패시킨다(자동 재시도 여부 확인용)
     if (server === 'Gmail' && tool === 'get_thread'){
+      if (st.threadError) throw { code:st.threadError, message:'(목) ' + st.threadError };
       const t = st.threads[input.threadId];
       if (!t) throw { code:'tool_error', message:'Requested entity was not found.' };
-      return { payload: clone(t) };
+      const full = input.messageFormat === 'PLAIN_TEXT';
+      return { payload:{ id:t.id, viewUrl:'https://mail.google.com/mail/#all/' + t.id, messages:t.messages.map(m => {
+        const o = clone(m);
+        if (!full){ delete o.subject; delete o.snippet; delete o.plaintextBody; delete o.attachments; }
+        return o;
+      }) } };
     }
     if (server === 'Google Calendar' && tool === 'create_event'){
       const id = nid('e');
@@ -158,12 +173,25 @@
       for (const m of prompt.matchAll(/^(s\d+r\d+) \| ([^|]+?) \|/gm)) cells[m[1]] = '(목) 작성 — ' + m[2].trim() + told;
       return { cells, questions:['(목) 수행시간을 알려 주세요'] };
     }
+    // 회신 요약(보드가 Gmail 회신 본문만 보냄): 본문의 첫 금액(쉼표 포함)을 «»로 인용한 줄 + 일부러 원문에 없는 숫자 줄(보드가 선택 해제하는지 확인용)
+    if (prompt.startsWith('[회신 요약]')){
+      const body = prompt.slice(prompt.indexOf('\n[회신 본문]') + 1).split('\n').slice(1).join('\n');
+      const money = (body.match(/\d{1,3}(?:,\d{3})+원/) || [])[0];
+      return { points:[money ? '(목) 견적 금액 «' + money + '»으로 회신함' : '(목) 회신 요지 — 금액 언급 없음', '(목) 납기 99일 소요 예정임'],
+        asks:['(목) 사업계획서 제출 일정 확인 요청'], quotes: money ? [money] : [] };
+    }
     if (prompt.includes('[도우미]')){
       const lastFull = Array.isArray(input) ? input[input.length - 1].content : prompt;
       const last = lastFull.split(/\r?\n/)[0];
       // 납품 서류(거래명세서·납품확인서·설치확인서 — PDF 글자나 붙여 넣은 글. [현재 …] 블록은 빼고 본다): 과제 = 말·서류 속 업체명(없으면 ""→ 보드가 되묻기),
       // 날짜 = «거래일자·납품일·설치일» 줄, 없으면 일부러 «발행일»(보드가 버리는지 확인용). 품목은 서류마다 고정 — 거래명세서엔 이미 설치 완료인 자산·수량 다름·짝 없는 품목,
       // 일부러 status:'operating'도 섞음(보드는 상태를 Claude 답에서 받지 않음)
+      // 회신 요약: 과제만 고른다(업체명 → id, 없으면 ""로 보드가 열린 과제 또는 되묻기)
+      if (/회신|답장/.test(last) && /요약|뭐래/.test(last)){
+        const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));
+        const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => last.includes(co));
+        return { reply:'(목) 최근 회신을 읽어 요약합니다.', card:null, quote:null, action:'replysum', projectId: proj ? proj[1] : '' };
+      }
       const body = lastFull.split('\n\n[현재 명함]')[0];
       const dt = (body.match(/거래명세서|납품확인서|설치확인서/) || [])[0];
       if (dt){
@@ -294,11 +322,16 @@
     downloads, calls,
     sent: () => clone(st.sent),
     events: () => clone(st.events),
-    reply(threadId){
+    // 받은 회신 주입. opt = { body, attachments } (없으면 짧은 기본 본문)
+    reply(threadId, opt = {}){
       const t = st.threads[threadId];
-      t.messages.push({ id: nid('r'), internalDate: String(Date.now() + 1000), labelIds:['INBOX','UNREAD'], sender:'tester@example.com' });
+      const s0 = t.messages[0];
+      t.messages.push(gmsg({ id: nid('r'), threadId, at: Date.now() + 1000, labelIds:['INBOX','UNREAD'], sender:'tester@example.com', toRecipients:['sender@example.com'],
+        subject:'Re: ' + (s0.subject || ''), body: opt.body ?? '(목) 회신드립니다.', attachments: opt.attachments }));
       save();
     },
+    unreply(threadId){ const t = st.threads[threadId]; t.messages = t.messages.filter(m => (m.labelIds || []).includes('SENT')); save(); },
+    threadError(code){ st.threadError = code || null; save(); },
     // 다른 기기의 쓰기처럼 스냅샷을 강제로 다시 보낸다(내용 동일)
     bump(col){ emit(col); },
     samples,

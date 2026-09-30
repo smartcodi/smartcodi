@@ -960,7 +960,7 @@ export async function case2(run){
       const dow = d => page.evaluate(x => withDow(x), d);
       if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
       await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
-      if ((await page.locator('#assist .abub.bot').first().locator('.agbtn').count()) !== 9) fail('새 대화 첫 인사에 기능 버튼 9개가 없음');
+      if ((await page.locator('#assist .abub.bot').first().locator('.agbtn').count()) !== 10) fail('새 대화 첫 인사에 기능 버튼 10개가 없음');
       const say = async text => {
         const before = await page.evaluate(() => window.__mock.samples.length);
         const n0 = await page.locator('#assist .plbox').count();
@@ -1124,14 +1124,14 @@ export async function case2(run){
     if (await page.locator('#newBtn').isVisible()) fail('할 일 탭에 «+ 새 과제»가 보임');
   });
   await run.step('C2-41', async () => {
-    // 도우미 기능 안내(Q-20260929-13): 첫 인사 = 기능 버튼 9개, 누르면 설명·예시 펼침(한 번에 하나, 다시 누르면 접힘)
+    // 도우미 기능 안내(Q-20260929-13): 첫 인사 = 기능 버튼 10개, 누르면 설명·예시 펼침(한 번에 하나, 다시 누르면 접힘)
     // «예시 넣기»는 입력창만 채움(sample 호출·말풍선 안 늘어남), 머리 «? 기능»은 대화를 지우지 않고 안내를 다시 띄움
     try {
       if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
       await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
       const g = page.locator('#assist .abub.bot').first();
       const names = (await g.locator('.agbtn').allInnerTexts()).map(t => t.trim());
-      if (names.join('|') !== '명함 등록|견적서 등록|납품 서류 반영|양식 초안|진단표 나누기|방문 결과 체크|과제 현황|예정일 잡기|메일·카톡 문구') fail('기능 버튼: ' + names.join('|'));
+      if (names.join('|') !== '명함 등록|견적서 등록|납품 서류 반영|양식 초안|진단표 나누기|방문 결과 체크|과제 현황|예정일 잡기|메일·카톡 문구|회신 요약') fail('기능 버튼: ' + names.join('|'));
       await hasText(g.locator('.rnote'), '사진·PDF는 저장하지 않습니다');
       await hasText(g.locator('.rnote'), 'Claude 사용량');
       const more = g.locator('.agmore');
@@ -1161,7 +1161,7 @@ export async function case2(run){
       await page.locator('#assist .ahead').getByRole('button', { name:'? 기능' }).click();
       if ((await page.locator('#assist .abub').count()) !== b0 + 1) fail('«? 기능»이 대화를 지우거나 안내를 안 띄움');
       const g2 = page.locator('#assist .abub').last();
-      if ((await g2.locator('.agbtn').count()) !== 9) fail('«? 기능» 안내에 버튼 9개가 없음');
+      if ((await g2.locator('.agbtn').count()) !== 10) fail('«? 기능» 안내에 버튼 10개가 없음');
       await g2.locator('.agbtn', { hasText:'납품 서류 반영' }).click();
       for (const t of ['선택한 N건 반영', '새로 만들지 않습니다', '«가동 중»은 현장에서 확인한 뒤']) await hasText(g2.locator('.agmore'), t);
       await g2.locator('.agbtn', { hasText:'메일·카톡 문구' }).click();
@@ -1452,6 +1452,89 @@ export async function case2(run){
     await hasText(todaySec(page, '회신 대기'), '회신을 기다리는 메일이 없습니다');
     await H.openStep(page, CO, 3);
     await hasText(stepBody(page, 3).locator('.mail').first(), '회신 ' + T.slice(5).replace('-', '/'));
+  });
+  await run.step('C2-45', async () => {
+    // 도우미 회신 요약(Q-20260929-10): get_thread PLAIN_TEXT(실측 모양) → 보낸 메일 뒤 회신(SENT 없음)의 plaintextBody만 요약(snippet 안 씀, 인용 줄 뺌)
+    // → 카드(원문 수치 그대로, 원문에 없는 숫자 줄은 선택 해제, 첨부 파일명) → «3단계 메모로 저장»(원문 본문은 저장 안 됨). status·currentStep 불변
+    // get_thread 오류 = 안내만·재시도 없음, 회신 없는 스레드 = 요약 안 함, 과제 모르면 되묻기, 활동 이력 «회신 요약» 버튼
+    const tid = (await page.evaluate(() => window.__mock.sent()))[0].threadId;
+    const BODY = '안녕하세요. 조정 견적 금액은 1,234,000원(부가세 별도)입니다.\n납품은 10월 15일부터 가능할 것 같습니다.\n\n> 원래 메일 인용줄 — 요약에 가면 안 됨';
+    const reads = () => page.evaluate(() => window.__mock.calls.filter(c => c.tool === 'get_thread' && c.input.messageFormat === 'PLAIN_TEXT').length);
+    const sums = () => page.evaluate(() => window.__mock.samples.filter(x => x.prompt.startsWith('[회신 요약]')).length);
+    const ask = async (text, sel, msg) => {
+      const n = await page.locator(sel).count();
+      await page.locator('#as-input').fill(text); await page.locator('#as-input').press('Enter');
+      await until(async () => (await page.locator(sel).count()) > n, msg, 15000);
+      await until(async () => !(await page.locator('#assist .abub.bot', { hasText:'읽는 중' }).count()) && !(await page.locator('#assist .abub.bot', { hasText:'요약하는 중' }).count()), '읽는 중이 안 끝남', 15000);
+    };
+    try {
+      const before = (await docsOf(page, 'projects'))[pid];
+      const notes0 = (before.steps['3'].notes || []).length;
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const g = page.locator('#assist .abub.bot').first();
+      if ((await g.locator('.agbtn').count()) !== 10) fail('기능 버튼이 10개가 아님');
+      await g.locator('.agbtn', { hasText:'회신 요약' }).click();
+      for (const t of ['회신 본문을 Claude에게 보냅니다', '원문 그대로', '회신 원문은 저장하지 않습니다', '보낸 사람의 Gmail']) await hasText(g.locator('.agmore'), t);
+      // (1) get_thread 오류: 안내만, 재시도 없음, 요약 호출 없음
+      await page.evaluate(() => window.__mock.threadError('needs_reauth'));
+      const r0 = await reads(), s0 = await sums();
+      await ask(CO + ' 회신 요약해 줘', '#assist .abub.sys', '연결 오류 안내가 없음');
+      await hasText(page.locator('#assist .abub.sys').last(), 'Gmail 커넥터를 쓸 수 없어');
+      await page.waitForTimeout(800);
+      if ((await reads()) !== r0 + 1) fail('get_thread 오류 뒤 재시도함: ' + ((await reads()) - r0) + '회');
+      if ((await sums()) !== s0) fail('오류인데 요약을 부름');
+      await page.evaluate(() => window.__mock.threadError(null));
+      // (2) 회신 없는 스레드: 읽기는 하되 요약 안 함
+      await page.evaluate(t => window.__mock.unreply(t), tid);
+      await ask(CO + ' 회신 요약해 줘', '#assist .abub.sys', '회신 없음 안내가 없음');
+      await hasText(page.locator('#assist .abub.sys').last(), '회신을 찾지 못했습니다');
+      if ((await reads()) !== r0 + 2 || (await sums()) !== s0) fail('회신 없는 스레드인데 요약함');
+      // (3) 회신 있음 → 카드
+      await page.evaluate(([t, body]) => window.__mock.reply(t, { body, attachments:[{ filename:'조정견적서_v2.pdf', mimeType:'application/pdf' }] }), [tid, BODY]);
+      const c0 = await page.locator('#assist .rybox').count();
+      await ask(CO + ' 회신 요약해 줘', '#assist .rybox', '회신 요약 카드가 안 뜸');
+      if ((await sums()) !== s0 + 1) fail('요약 호출이 1회가 아님');
+      const sp = await page.evaluate(() => window.__mock.samples.filter(x => x.prompt.startsWith('[회신 요약]')).at(-1).prompt);
+      if (!sp.includes('1,234,000원')) fail('요약 근거에 쉼표 있는 원문 수치가 없음(snippet을 씀?)');
+      if (sp.includes('원래 메일 인용줄')) fail('인용된 이전 메일이 요약 근거에 들어감');
+      if (sp.includes('tester@example.com')) fail('보낸 사람 주소가 Claude로 나감');
+      const rp = await page.evaluate(() => window.__mock.samples.filter(x => x.prompt.includes('[도우미]')).at(-1).prompt);
+      for (const t of ['회신 요약 규칙', '"replysum"']) if (!rp.includes(t)) fail('규칙 턴에 없음: ' + t);
+      const box = page.locator('#assist .rybox').last();
+      await hasText(box, '«1,234,000원»');
+      await hasText(box, '조정견적서_v2.pdf');
+      await hasText(box, '회신 본문을 Claude에게 보내');
+      const bad = box.locator('.qitem', { hasText:'99일' });
+      await hasText(bad.locator('.qwarn'), '원문에 없는 숫자: 99');
+      if (await bad.locator('input[type=checkbox]').isChecked()) fail('원문에 없는 숫자 줄이 선택된 채로 시작');
+      if (!(await box.locator('.qitem', { hasText:'1,234,000' }).locator('input[type=checkbox]').isChecked())) fail('원문 수치 줄이 선택 해제로 시작');
+      const go = box.getByRole('button', { name:/3단계 메모로 저장 \(2줄\)/ });
+      await go.click();
+      await hasText(page.locator('#assist .abub.sys').last(), '3단계 메모에 회신 요약');
+      await until(async () => ((await docsOf(page, 'projects'))[pid].steps['3'].notes || []).length === notes0 + 1, '메모가 저장 안 됨');
+      const after = (await docsOf(page, 'projects'))[pid], note = after.steps['3'].notes.at(-1).text;
+      if (!note.startsWith('(메일 회신 요약)') || !note.includes('«1,234,000원»') || !note.includes('첨부: 조정견적서_v2.pdf')) fail('메모 내용: ' + note);
+      if (note.includes('99일')) fail('선택 해제한 줄이 저장됨');
+      if (note.includes('납품은 10월 15일부터 가능할 것 같습니다') || note.includes('원래 메일 인용줄')) fail('회신 원문이 저장됨');
+      if (JSON.stringify(after).includes('부가세 별도)입니다')) fail('과제 문서에 회신 원문이 남음');
+      if (after.currentStep !== before.currentStep || after.steps['3'].status !== before.steps['3'].status) fail('단계 상태·currentStep이 바뀜');
+      if ((after.activities || []).length !== (before.activities || []).length) fail('활동이 늘어남');
+      // (4) 과제 모르면 되묻기(열린 과제 없음)
+      await H.closeDrawer(page); await tab(page, 'today');
+      const s1 = await sums();
+      await ask('회신 요약해 줘', '#assist .abub.sys', '과제를 되묻지 않음');
+      await hasText(page.locator('#assist .abub.sys').last(), '어느 과제의 회신인지');
+      if ((await sums()) !== s1) fail('과제를 모르는데 요약함');
+      // (5) 과제 상세 활동 이력 «회신 요약» 버튼 → 도우미에 카드
+      await H.openStep(page, CO, 3);
+      const rb = stepBody(page, 3).locator('.mail').first().locator('.rybtn');
+      if (!(await rb.count())) fail('회신 확인된 활동에 «회신 요약» 버튼이 없음');
+      const c1 = await page.locator('#assist .rybox').count();
+      await rb.click();
+      await until(async () => (await page.locator('#assist .rybox').count()) > c1, '버튼으로 회신 요약 카드가 안 뜸', 15000);
+      if (c1 <= c0) fail('카드 수 이상');
+    } finally { await page.evaluate(() => window.__mock.threadError(null)); await closeAssist(); await H.closeDrawer(page); }
   });
   await run.step('C2-11', async () => {
     m = await openSend(page, CO, 3);

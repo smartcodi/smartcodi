@@ -115,7 +115,7 @@ smartcodi/
 «Agent» = 보드 도우미다. 별도 서버가 아니라 보드 안의 `sample` 호출(`assistSend`)이고, 실제 프롬프트는 `assistRules()`, 응답 검증은 `norm*()`이다. 도우미 기능 10개(명함·견적서·납품 서류·양식 초안·진단표 나누기·방문 결과 체크·과제 현황·예정일·메일·카톡 문구·회신 요약)는 이미 구현돼 있다 — 새로 만들지 말고 `doc/설계/화면_구성.md` «보드 도우미»를 먼저 읽는다. 운영 규칙은 `AGENTS.md`.
 
 - **문서 우선순위**: `doc/단계_역할_정본.md` → 현재 코드·데이터 모델 → `doc/테스트/`·E2E fixture → `doc/반복업무_정리.md` → `doc/설계/*.md` → 이 파일 → `AGENTS.md` → `agent/system-prompt.md`. 문서와 코드가 다르면 하나를 임의로 고르지 말고 차이와 영향을 보고한다.
-- **응답 계약**: `{reply, card, quote, diag, progress, schedule, mail, delivery, action, projectId, formId}`, `action` = `none|register|draft|status|mail|replysum`. 정본은 `agent/actions.schema.json`이고 `assistRules()`의 JSON 명세·`tests/e2e/mock-claude.js`와 같이 고친다. action 이름을 바꾸지 않는다.
+- **응답 계약**: `{reply, card, quote, diag, progress, schedule, mail, delivery, action, projectId, formId}`, `action` = `none|register|draft|status|mail|replysum`. 정본은 `agent/actions.schema.json`이고 `assistRules()`의 JSON 명세·`tests/e2e/mock-claude.js`와 같이 고친다. action 이름을 바꾸지 않는다. E2E(`run.mjs`)가 CASE마다 목의 도우미 응답을 이 스키마로 검사한다(ajv, 어긋나면 `CASEn-계약` 실패) — 목에 새 응답 필드를 넣으면 스키마부터 고친다.
 - **Understand/Propose와 Execute를 섞지 않는다.** 도우미는 제안 카드까지, 저장·발송·일정 등록·자산 변경은 사람이 누르는 기존 경로(`save`·`writeMaster`·`saveAsset`·`addActivity`·`openSend`·`calRegister`/`calMove`)로만. LLM이 DB를 직접 고치는 코드를 만들지 않는다.
 - **도우미는 단계 `status`·`currentStep`을 바꾸지 않는다**(사람이 상태를 바꿀 때의 이동은 «절대 하지 말 것» 참고).
 - **확인 원칙**: 조회·현황·문구·초안·외부 조사는 바로 해도 된다. DB 등록·수정, 캘린더 등록·수정, Gmail 발송, 자산 상태 변경은 사람 확인 후. 실행 결과(메시지 `id`, 이벤트 `id`)를 확인하기 전에는 성공이라 말하지 않는다.

@@ -32,7 +32,7 @@
 
 ```bash
 cd tests/e2e
-npm install            # playwright
+npm install            # playwright, ajv(도우미 응답 계약 검사)
 node run.mjs           # 전체 CASE 1~6 (약 2분) → doc/테스트/E2E_시나리오_CASE1-6.xlsx 에 회차 기록
 node run.mjs 2 3       # 일부 CASE
 ```

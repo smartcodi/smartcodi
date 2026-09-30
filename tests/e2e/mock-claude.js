@@ -150,7 +150,7 @@
     const images = opts.images ? [].concat(opts.images).length : 0;
     samples.push({ prompt, images, modelTier: opts.modelTier || 'default' });
     await new Promise(ok => setTimeout(ok, 50));
-    // 보드 도우미(대화): 마지막 사용자 말의 첫 줄로 흉내 — 견적서 PDF → quote, 등록해/네 → register, 공급기업 → 유형 정정, 과제 → 못 함, 그 밖 → 명함 읽기
+    // 보드 도우미(대화): 마지막 사용자 말의 첫 줄로 흉내 — 납품 서류 → delivery, 견적서 PDF → quote, 등록해/네 → register, 공급기업 → 유형 정정, 과제 → 못 함, 그 밖 → 명함 읽기
     // 양식 초안 작성: [칸 목록]의 key마다 채움. 사용자가 알려 준 «용접 불량 원인»이 프롬프트에 있으면 반영(근거 전달 확인용)
     if (prompt.startsWith('[작성]')){
       const told = prompt.includes('용접 불량 원인') ? ' · 용접 불량 원인 논의 반영' : '';
@@ -161,8 +161,31 @@
     if (prompt.includes('[도우미]')){
       const lastFull = Array.isArray(input) ? input[input.length - 1].content : prompt;
       const last = lastFull.split(/\r?\n/)[0];
+      // 납품 서류(거래명세서·납품확인서·설치확인서 — PDF 글자나 붙여 넣은 글. [현재 …] 블록은 빼고 본다): 과제 = 말·서류 속 업체명(없으면 ""→ 보드가 되묻기),
+      // 날짜 = «거래일자·납품일·설치일» 줄, 없으면 일부러 «발행일»(보드가 버리는지 확인용). 품목은 서류마다 고정 — 거래명세서엔 이미 설치 완료인 자산·수량 다름·짝 없는 품목,
+      // 일부러 status:'operating'도 섞음(보드는 상태를 Claude 답에서 받지 않음)
+      const body = lastFull.split('\n\n[현재 명함]')[0];
+      const dt = (body.match(/거래명세서|납품확인서|설치확인서/) || [])[0];
+      if (dt){
+        const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));
+        const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => body.includes(co));
+        const dm = body.match(/(거래일자|납품일|설치일)\s*:?\s*(\d{4}-\d{2}-\d{2})/) || body.match(/발행일\s*:?\s*(\d{4}-\d{2}-\d{2})/);
+        const items = {
+          거래명세서:[
+            { name:'CNC 레이저 용접 시스템', model:'', qty:1, serial:'CNC-NEW-9', said:'(목) CNC 레이저 용접 시스템 1대', status:'operating' },
+            { name:'[테스트] 견적 계량기', model:'QT-100', qty:3, serial:'QT-SN-001', said:'(목) 계량기 QT-100 3대' },
+            { name:'[테스트] 없던 품목', model:'NX-1', qty:1, serial:'', said:'(목) 없던 품목 NX-1 1개' } ],
+          납품확인서:[
+            { name:'[테스트] 견적 계량기', model:'QT-100', qty:2, serial:'QT-SN-002', said:'(목) 계량기 2대' },
+            { name:'[테스트] 견적 MES', model:'QM-1', qty:3, serial:'', said:'(목) MES 3개월' } ],
+          설치확인서:[ { name:'CNC 레이저 용접 시스템', model:'', qty:1, serial:'', said:'(목) CNC 설치' } ],
+        }[dt];
+        return { reply:'(목) ' + dt + '를 읽었습니다: ' + items.length + '품목. 아래 카드에서 확인하고 반영을 눌러 주세요.', card:null, quote:null, action:'none',
+          delivery:{ projectId: proj ? proj[1] : '', docType:dt, supplier:(body.match(/공급자:\s*(.+?)\s*·/) || [])[1] || '',
+            date: dm ? dm[dm.length - 1] : '', dateSaid: dm ? dm[0] : '', items } };
+      }
       // 견적서 PDF(보드가 뽑은 텍스트): «공급자: …»와 과제 목록의 업체명으로 공급기업·과제를 흉내, 품목은 고정(기존 장비 1 + 새 장비 2)
-      if (lastFull.includes('[견적서 PDF')){
+      if (lastFull.includes('[첨부 PDF')){
         const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));
         const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => lastFull.includes(co));
         const sup = (lastFull.match(/공급자:\s*(.+?)\s*·/) || [])[1] || '';

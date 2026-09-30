@@ -714,7 +714,7 @@ export async function case2(run){
       try { await until(async () => (await page.locator('#assist .qbox').count()) > n0, '견적서 표가 안 뜸', 20000); }
       catch (e){ fail('견적서 표가 안 뜸 / 마지막 말풍선: ' + (await page.locator('#assist .abub').last().innerText().catch(() => '?')).slice(0, 200)); }
       const c = await page.evaluate(i => window.__mock.samples[i], before);
-      if (c.images !== 0 || !c.prompt.includes('[견적서 PDF: quote.pdf') || !c.prompt.includes('견적서 텍스트 추출 확인용')) fail('PDF 텍스트 전달: 이미지 ' + c.images);
+      if (c.images !== 0 || !c.prompt.includes('[첨부 PDF: quote.pdf') || !c.prompt.includes('견적서 텍스트 추출 확인용')) fail('PDF 텍스트 전달: 이미지 ' + c.images);
       const box = page.locator('#assist .qbox').last();
       const supId = await findId(page, 'accounts', d => d.name === SUP), pid = await projectId(page, CO);
       if ((await box.locator('select[id$="-sup"]').inputValue()) !== supId) fail('공급기업 자동 선택 안 됨');
@@ -960,7 +960,7 @@ export async function case2(run){
       const dow = d => page.evaluate(x => withDow(x), d);
       if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
       await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
-      if ((await page.locator('#assist .abub.bot').first().locator('.agbtn').count()) !== 8) fail('새 대화 첫 인사에 기능 버튼 8개가 없음');
+      if ((await page.locator('#assist .abub.bot').first().locator('.agbtn').count()) !== 10) fail('새 대화 첫 인사에 기능 버튼 10개가 없음');
       const say = async text => {
         const before = await page.evaluate(() => window.__mock.samples.length);
         const n0 = await page.locator('#assist .plbox').count();
@@ -1124,14 +1124,14 @@ export async function case2(run){
     if (await page.locator('#newBtn').isVisible()) fail('할 일 탭에 «+ 새 과제»가 보임');
   });
   await run.step('C2-41', async () => {
-    // 도우미 기능 안내(Q-20260929-13): 첫 인사 = 기능 버튼 8개, 누르면 설명·예시 펼침(한 번에 하나, 다시 누르면 접힘)
+    // 도우미 기능 안내(Q-20260929-13): 첫 인사 = 기능 버튼 10개, 누르면 설명·예시 펼침(한 번에 하나, 다시 누르면 접힘)
     // «예시 넣기»는 입력창만 채움(sample 호출·말풍선 안 늘어남), 머리 «? 기능»은 대화를 지우지 않고 안내를 다시 띄움
     try {
       if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
       await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
       const g = page.locator('#assist .abub.bot').first();
       const names = (await g.locator('.agbtn').allInnerTexts()).map(t => t.trim());
-      if (names.join('|') !== '명함 등록|견적서 등록|양식 초안|진단표 나누기|방문 결과 체크|과제 현황|예정일 잡기|메일·카톡 문구') fail('기능 버튼: ' + names.join('|'));
+      if (names.join('|') !== '명함 등록|견적서 등록|납품 서류 반영|양식 초안|진단표 나누기|방문 결과 체크|과제 현황|예정일 잡기|메일·카톡 문구|회신 요약') fail('기능 버튼: ' + names.join('|'));
       await hasText(g.locator('.rnote'), '사진·PDF는 저장하지 않습니다');
       await hasText(g.locator('.rnote'), 'Claude 사용량');
       const more = g.locator('.agmore');
@@ -1161,7 +1161,9 @@ export async function case2(run){
       await page.locator('#assist .ahead').getByRole('button', { name:'? 기능' }).click();
       if ((await page.locator('#assist .abub').count()) !== b0 + 1) fail('«? 기능»이 대화를 지우거나 안내를 안 띄움');
       const g2 = page.locator('#assist .abub').last();
-      if ((await g2.locator('.agbtn').count()) !== 8) fail('«? 기능» 안내에 버튼 8개가 없음');
+      if ((await g2.locator('.agbtn').count()) !== 10) fail('«? 기능» 안내에 버튼 10개가 없음');
+      await g2.locator('.agbtn', { hasText:'납품 서류 반영' }).click();
+      for (const t of ['선택한 N건 반영', '새로 만들지 않습니다', '«가동 중»은 현장에서 확인한 뒤']) await hasText(g2.locator('.agmore'), t);
       await g2.locator('.agbtn', { hasText:'메일·카톡 문구' }).click();
       for (const t of ['보내기 창 열기', '두 번', '카톡용 문구 복사', '[확인 필요]', '도우미는 보내지 않습니다']) await hasText(g2.locator('.agmore'), t);
       await g2.locator('.agbtn', { hasText:'명함 등록' }).click();
@@ -1241,6 +1243,138 @@ export async function case2(run){
       if ((await sendN()) !== n0) fail('도우미가 send_message를 불렀음');
     } finally { await H.closeModals(page); await closeAssist(); }
   });
+  await run.step('C2-43', async () => {
+    // 도우미 납품 서류 반영(Q-20260929-09): 기존 자산만 갱신 — 거래명세서 → 발주까지, 납품확인서 → 설치 완료까지, «가동 중» 제안 없음, 앞선 상태는 그대로,
+    // 짝 없는 품목은 표시만(장비·자산 수 불변), 기존 시리얼·날짜는 선택 해제로 시작, 발행일은 날짜로 안 씀, 6단계 status·currentStep 불변, 과제 모르면 되묻기
+    try {
+      const pid = await projectId(page, CO);
+      await editAsset(page, CO, 'CNC 레이저 용접 시스템', { status:{ value:'installed' }, serial:'CNC-OLD-1', installedAt:'2026-09-25' });
+      const assetOf = async name => { const prid = await findId(page, 'products', d => d.name === name); return Object.values(await docsOf(page, 'assets')).find(a => a.projectId === pid && a.productId === prid); };
+      await until(async () => (await assetOf('CNC 레이저 용접 시스템'))?.status === 'installed', 'CNC 자산 준비(설치 완료) 저장 안 됨');
+      const p0 = (await docsOf(page, 'projects'))[pid];
+      const nProd = Object.keys(await docsOf(page, 'products')).length, nAsset = Object.keys(await docsOf(page, 'assets')).length;
+      const pdfOf = async (name, html) => {
+        const pg = await page.context().newPage();
+        await pg.setContent(`<html><body style="font-family:'Malgun Gothic',sans-serif">${html}</body></html>`);
+        const file = path.join(HERE, 'results', name);
+        await pg.pdf({ path:file, format:'A4' }); await pg.close(); return file;
+      };
+      const ask = async (text, file) => {
+        if (file){
+          await page.locator('#as-img').setInputFiles(file);
+          await until(async () => (await page.locator('#assist .athumb', { hasText:path.basename(file) }).count()) === 1, 'PDF가 첨부 목록에 안 붙음');
+        }
+        const n0 = await page.locator('#assist .dlbox').count();
+        await page.locator('#as-input').fill(text); await page.locator('#as-input').press('Enter');
+        try { await until(async () => (await page.locator('#assist .dlbox').count()) > n0, '납품 서류 카드가 안 뜸', 20000); }
+        catch (e){ fail('납품 서류 카드가 안 뜸: ' + text + ' / 마지막 말풍선: ' + (await page.locator('#assist .abub').last().innerText().catch(() => '?')).slice(0, 200)); }
+        return page.locator('#assist .dlbox').last();
+      };
+      const item = (b, t) => b.locator('.qitem', { hasText:t });
+      const chk = (card, t) => card.locator('.dlrow', { hasText:t }).locator('input[type=checkbox]');
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      // 1) 거래명세서 PDF: 이미 설치 완료인 CNC는 상태 그대로(후퇴 없음)·기존 시리얼 해제, 계량기는 검토 중 → 발주·수량 다름 경고, 짝 없는 품목은 표시만
+      const f1 = await pdfOf('delivery-order.pdf', `<h1>거 래 명 세 서</h1>
+        <p>공급자: ${SUP} · 공급받는자: ${CO} 귀하</p><p>작성일자: 2026-10-04</p><p>거래일자: 2026-10-05</p>
+        <p>1. CNC 레이저 용접 시스템 1대 S/N CNC-NEW-9 / 2. [테스트] 견적 계량기 QT-100 3대 S/N QT-SN-001 / 3. [테스트] 없던 품목 NX-1 1개</p>`);
+      const before = await page.evaluate(() => window.__mock.samples.length);
+      const b1 = await ask('이 거래명세서 반영해 줘', f1);
+      const c = await page.evaluate(i => window.__mock.samples[i], before);
+      for (const t of ['[첨부 PDF: delivery-order.pdf', '납품 서류 반영 규칙', '발행일·출력일은 date로 쓰지 않습니다', '[현재 납품 서류]']) if (!c.prompt.includes(t)) fail('프롬프트에 없음: ' + t);
+      const cnc = item(b1, 'CNC 레이저 용접 시스템'), meter = item(b1, '견적 계량기'), none = item(b1, '없던 품목');
+      await hasText(cnc, '상태 그대로 — 이미 «설치 완료»');
+      await hasText(cnc, '기존 CNC-OLD-1');
+      if (await chk(cnc, '시리얼').isChecked()) fail('기존 시리얼이 있는데 선택됨');
+      await hasText(meter, '상태 검토 중 → 발주');
+      if (!(await chk(meter, '상태').isChecked())) fail('계량기 상태 제안이 선택 안 됨');
+      await hasText(meter, '수량 다름: 서류 3 · 자산 2');
+      await hasText(meter, '발주일 2026-10-05');
+      await hasText(none, '견적서에 없던 품목');
+      if (await none.locator('input').count()) fail('짝 없는 품목에 체크박스가 있음');
+      if ((await b1.innerText()).includes('→ 가동 중') || (await b1.innerText()).includes('2026-10-04')) fail('가동 중 제안 또는 작성일이 날짜로 들어감');
+      await meter.locator('.dlrow', { hasText:'시리얼' }).locator('input[type=text]').fill('QT-SN-001A');   // 사람이 시리얼을 고침
+      await b1.getByRole('button', { name:'선택한 2건 반영' }).click();
+      await hasText(page.locator('#assist .abub.sys').last(), '반영했습니다');
+      await until(async () => (await assetOf('[테스트] 견적 계량기'))?.status === 'ordered', '계량기 발주 반영 안 됨');
+      const m1 = await assetOf('[테스트] 견적 계량기'), k1 = await assetOf('CNC 레이저 용접 시스템');
+      if (m1.orderedAt !== '2026-10-05' || m1.serial !== 'QT-SN-001A' || m1.qty !== 2 || !m1.memo.includes('거래명세서에서 반영')) fail('계량기 자산: ' + JSON.stringify(m1));
+      if (k1.status !== 'installed' || k1.serial !== 'CNC-OLD-1' || k1.installedAt !== '2026-09-25' || k1.orderedAt !== '2026-10-05') fail('CNC 자산(후퇴·시리얼 덮기 금지): ' + JSON.stringify(k1));
+      if (!(await b1.getByRole('button', { name:/반영됨/ }).isDisabled())) fail('반영 뒤 버튼이 다시 눌림');
+      // 2) 납품확인서 PDF: 발행일·납품일이 함께 있으면 납품일만, 발주 → 설치 완료, 기존 시리얼은 해제로 시작
+      const f2 = await pdfOf('delivery-install.pdf', `<h1>납 품 확 인 서</h1>
+        <p>공급자: ${SUP} · 납품처: ${CO}</p><p>발행일 2026-10-09</p><p>납품일: 2026-10-08</p>
+        <p>1. [테스트] 견적 계량기 QT-100 2대 S/N QT-SN-002 / 2. [테스트] 견적 MES QM-1 3개월</p>`);
+      const b2 = await ask('이 납품확인서 반영해 줘', f2);
+      const meter2 = item(b2, '견적 계량기'), mes = item(b2, '견적 MES');
+      await hasText(meter2, '상태 발주 → 설치 완료');
+      await hasText(meter2, '설치일 2026-10-08');
+      if (await chk(meter2, '시리얼').isChecked()) fail('기존 시리얼(QT-SN-001A)이 있는데 새 시리얼이 선택됨');
+      await hasText(mes, '상태 검토 중 → 설치 완료');
+      if ((await b2.innerText()).includes('2026-10-09') || (await b2.innerText()).includes('→ 가동 중') || (await b2.innerText()).includes('수량 다름')) fail('발행일·가동 중·수량 경고가 잘못 나옴');
+      await b2.getByRole('button', { name:'선택한 2건 반영' }).click();
+      await until(async () => (await assetOf('[테스트] 견적 MES'))?.status === 'installed', 'MES 설치 완료 반영 안 됨');
+      const m2 = await assetOf('[테스트] 견적 계량기'), s2 = await assetOf('[테스트] 견적 MES');
+      if (m2.status !== 'installed' || m2.installedAt !== '2026-10-08' || m2.serial !== 'QT-SN-001A') fail('계량기 자산(납품): ' + JSON.stringify(m2));
+      if (s2.installedAt !== '2026-10-08' || s2.serial) fail('MES 자산: ' + JSON.stringify(s2));
+      // 3) 붙여 넣은 설치확인서(발행일만) → 날짜 비움, 이미 설치 완료라 반영할 것 없음(버튼 꺼짐)
+      const b3 = await ask(CO + ' 설치확인서: 발행일 2026-10-09, CNC 레이저 용접 시스템 1대 설치');
+      await hasText(b3, '거래·납품·설치일로 적힌 날짜가 아닙니다');
+      await hasText(item(b3, 'CNC 레이저 용접 시스템'), '반영할 것 없음');
+      if (!(await b3.getByRole('button', { name:'선택한 0건 반영' }).isDisabled())) fail('반영할 것이 없는데 버튼이 켜짐');
+      // 4) 과제 모름: 할 일 탭에서 업체명 없이 → 카드 없이 되묻기
+      await tab(page, 'today');
+      const n3 = await page.locator('#assist .dlbox').count();
+      await page.locator('#as-input').fill('거래명세서 반영해 줘'); await page.locator('#as-input').press('Enter');
+      await until(() => page.locator('#assist .abub.sys', { hasText:'어느 과제의 서류인지' }).count(), '과제를 되묻지 않음', 15000);
+      if ((await page.locator('#assist .dlbox').count()) !== n3) fail('되묻기인데 카드가 뜸');
+      // 불변: 장비·자산 수, 가동 중 없음, 6단계 상태·산출물 체크·현재 단계
+      const p1 = (await docsOf(page, 'projects'))[pid], assets = Object.values(await docsOf(page, 'assets'));
+      if (Object.keys(await docsOf(page, 'products')).length !== nProd || assets.length !== nAsset) fail('장비·자산 수가 바뀜(새로 만들면 안 됨)');
+      if (assets.some(a => a.projectId === pid && a.status === 'operating')) fail('«가동 중»으로 바뀐 자산이 있음');
+      if (JSON.stringify(p1.steps?.['6'] || {}) !== JSON.stringify(p0.steps?.['6'] || {}) || p1.currentStep !== p0.currentStep) fail('6단계·현재 단계가 바뀜');
+    } finally { await closeAssist(); await H.closeDrawer(page); }
+  });
+  await run.step('C2-44', async () => {
+    // 도우미 납품 서류 반영 보강(Q-20260929-09 검수): (1) 자산 없는 과제 → 카드 없이 «견적서 등록부터», 자산·장비 새로 안 만듦
+    // (2) 카드를 띄운 뒤 자산이 바뀌면(시리얼) 선택해도 덮지 않고 «그사이 자산이 바뀌어 반영하지 않았습니다»
+    const EMPTY = '[테스트] C2납품빈과제', ERep = '[테스트] C2빈대표';
+    try {
+      await setupProject(page, { company:EMPTY, cycle:'2026-T3', notice:'main', rep:{ name:ERep, title:'대표' } });
+      await H.closeDrawer(page);
+      const nAsset = Object.keys(await docsOf(page, 'assets')).length, nProd = Object.keys(await docsOf(page, 'products')).length;
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const n0 = await page.locator('#assist .dlbox').count();
+      await page.locator('#as-input').fill(EMPTY + ' 거래명세서: 거래일자 2026-10-06, 품목 CNC 레이저 용접 시스템 1대'); await page.locator('#as-input').press('Enter');
+      await until(() => page.locator('#assist .abub.sys', { hasText:'도입 장비(자산)가 없습니다' }).count(), '자산 없는 과제인데 견적서 안내가 없음', 15000);
+      await hasText(page.locator('#assist .abub.sys').last(), '견적서 등록부터');
+      if ((await page.locator('#assist .dlbox').count()) !== n0) fail('자산이 없는데 카드가 뜸');
+      if (Object.keys(await docsOf(page, 'assets')).length !== nAsset || Object.keys(await docsOf(page, 'products')).length !== nProd) fail('자산·장비가 새로 만들어짐');
+      // (2) CO의 CNC 자산: 카드 뜬 뒤 시리얼을 바꾸고 «시리얼» 칸을 선택해 반영 시도
+      const pid = await projectId(page, CO), prid = await findId(page, 'products', d => d.name === 'CNC 레이저 용접 시스템');
+      const cncEntry = async () => Object.entries(await docsOf(page, 'assets')).find(([, a]) => a.projectId === pid && a.productId === prid);
+      const [aid, a0] = await cncEntry();
+      const nb = await page.locator('#assist .dlbox').count();
+      await page.locator('#as-input').fill(CO + ' 거래명세서: 거래일자 2026-10-06'); await page.locator('#as-input').press('Enter');
+      try { await until(async () => (await page.locator('#assist .dlbox').count()) > nb, '납품 서류 카드가 안 뜸', 20000); }
+      catch (e){ fail('납품 서류 카드가 안 뜸 / 마지막 말풍선: ' + (await page.locator('#assist .abub').last().innerText().catch(() => '?')).slice(0, 200)); }
+      const box = page.locator('#assist .dlbox').last(), cnc = box.locator('.qitem', { hasText:'CNC 레이저 용접 시스템' });
+      await hasText(cnc, '시리얼 (기존 ' + a0.serial);
+      await cnc.locator('.dlrow', { hasText:'시리얼' }).locator('input[type=checkbox]').check();
+      await page.evaluate(([id, serial]) => saveAsset(id, Object.assign({}, state.assets.get(id), { serial })), [aid, 'CNC-CHANGED-BY-OTHER']);
+      await until(async () => (await cncEntry())[1].serial === 'CNC-CHANGED-BY-OTHER', '다른 곳의 시리얼 변경 저장 안 됨');
+      await box.getByRole('button', { name:'선택한 1건 반영' }).click();
+      await hasText(page.locator('#assist .abub.sys').last(), '그사이 자산이 바뀌어 반영하지 않았습니다');
+      await hasText(page.locator('#assist .abub.sys').last(), '0건에');
+      const a1 = (await cncEntry())[1];
+      if (a1.serial !== 'CNC-CHANGED-BY-OTHER' || String(a1.memo || '') !== String(a0.memo || '')) fail('바뀐 자산을 덮었거나 메모를 남김: ' + JSON.stringify(a1));
+    } finally {
+      await closeAssist(); await H.closeDrawer(page);
+      await cleanupCase(page, { company:EMPTY, contacts:[ERep], accounts:[EMPTY] });
+      await tab(page, 'today');
+    }
+  });
   await run.step('C2-32', async () => {
     // 화면 구성: 위 탭 7개(묶음) + 보기 전환 칩 · 기관별 보기에서 담당자 펼침·검색 강조 · 통합 검색으로 담당자 상세
     await H.closeDrawer(page);
@@ -1263,12 +1397,12 @@ export async function case2(run){
     await until(() => page.locator('#acc tbody tr.absub', { hasText:SALES }).count(), '▸를 눌러도 담당자가 안 펼쳐짐');
     await supRow.locator('.abtg').click();
     await until(async () => !(await page.locator('#acc tbody tr.absub', { hasText:SALES }).count()), '▾로 안 접힘');
-    await page.locator('#ab-q').fill('C2영업');
+    await page.locator('#ab-q:visible').fill('C2영업');
     await until(() => page.locator('#acc tbody tr.absub.hit', { hasText:SALES }).count(), '검색으로 담당자가 펼쳐지고 강조되지 않음');
     await page.locator('#acc tbody tr.absub.hit', { hasText:SALES }).click();
     await hasText(page.locator('.drawer .dr-head'), SALES);
     await H.closeDrawer(page);
-    await page.locator('#ab-q').fill('');
+    await page.locator('#ab-q:visible').fill('');
     await page.locator('#acc .subnav [data-key="con"]').click();
     await until(() => page.locator('#con tbody tr', { hasText:SALES }).count(), '담당자 전체 보기에 담당자 표가 없음');
     await tab(page, 'prod'); await page.locator('#prod .subnav [data-key="asset"]').click();
@@ -1318,6 +1452,130 @@ export async function case2(run){
     await hasText(todaySec(page, '회신 대기'), '회신을 기다리는 메일이 없습니다');
     await H.openStep(page, CO, 3);
     await hasText(stepBody(page, 3).locator('.mail').first(), '회신 ' + T.slice(5).replace('-', '/'));
+  });
+  await run.step('C2-45', async () => {
+    // 도우미 회신 요약(Q-20260929-10): get_thread PLAIN_TEXT(실측 모양) → 보낸 메일 뒤 회신(SENT 없음)의 plaintextBody만 요약(snippet 안 씀, 인용 줄 뺌)
+    // → 카드(원문 수치 그대로, 원문에 없는 숫자 줄은 선택 해제, 첨부 파일명) → «3단계 메모로 저장»(원문 본문은 저장 안 됨). status·currentStep 불변
+    // get_thread 오류 = 안내만·재시도 없음, 회신 없는 스레드 = 요약 안 함, 과제 모르면 되묻기, 활동 이력 «회신 요약» 버튼
+    const tid = (await page.evaluate(() => window.__mock.sent()))[0].threadId;
+    const BODY = '안녕하세요. 조정 견적 금액은 1,234,000원(부가세 별도)입니다.\n납품은 10월 15일부터 가능할 것 같습니다.\n\n> 원래 메일 인용줄 — 요약에 가면 안 됨';
+    const reads = () => page.evaluate(() => window.__mock.calls.filter(c => c.tool === 'get_thread' && c.input.messageFormat === 'PLAIN_TEXT').length);
+    const sums = () => page.evaluate(() => window.__mock.samples.filter(x => x.prompt.startsWith('[회신 요약]')).length);
+    const ask = async (text, sel, msg) => {
+      const n = await page.locator(sel).count();
+      await page.locator('#as-input').fill(text); await page.locator('#as-input').press('Enter');
+      await until(async () => (await page.locator(sel).count()) > n, msg, 15000);
+      await until(async () => !(await page.locator('#assist .abub.bot', { hasText:'읽는 중' }).count()) && !(await page.locator('#assist .abub.bot', { hasText:'요약하는 중' }).count()), '읽는 중이 안 끝남', 15000);
+    };
+    try {
+      const before = (await docsOf(page, 'projects'))[pid];
+      const notes0 = (before.steps['3'].notes || []).length;
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      const g = page.locator('#assist .abub.bot').first();
+      if ((await g.locator('.agbtn').count()) !== 10) fail('기능 버튼이 10개가 아님');
+      await g.locator('.agbtn', { hasText:'회신 요약' }).click();
+      for (const t of ['회신 본문을 Claude에게 보냅니다', '원문 그대로', '회신 원문은 저장하지 않습니다', '보낸 사람의 Gmail']) await hasText(g.locator('.agmore'), t);
+      // (1) get_thread 오류: 안내만, 재시도 없음, 요약 호출 없음
+      await page.evaluate(() => window.__mock.threadError('needs_reauth'));
+      const r0 = await reads(), s0 = await sums();
+      await ask(CO + ' 회신 요약해 줘', '#assist .abub.sys', '연결 오류 안내가 없음');
+      await hasText(page.locator('#assist .abub.sys').last(), 'Gmail 커넥터를 쓸 수 없어');
+      await page.waitForTimeout(800);
+      if ((await reads()) !== r0 + 1) fail('get_thread 오류 뒤 재시도함: ' + ((await reads()) - r0) + '회');
+      if ((await sums()) !== s0) fail('오류인데 요약을 부름');
+      await page.evaluate(() => window.__mock.threadError(null));
+      // (2) 회신 없는 스레드: 읽기는 하되 요약 안 함
+      await page.evaluate(t => window.__mock.unreply(t), tid);
+      await ask(CO + ' 회신 요약해 줘', '#assist .abub.sys', '회신 없음 안내가 없음');
+      await hasText(page.locator('#assist .abub.sys').last(), '회신을 찾지 못했습니다');
+      if ((await reads()) !== r0 + 2 || (await sums()) !== s0) fail('회신 없는 스레드인데 요약함');
+      // (3) 회신 있음 → 카드
+      await page.evaluate(([t, body]) => window.__mock.reply(t, { body, attachments:[{ filename:'조정견적서_v2.pdf', mimeType:'application/pdf' }] }), [tid, BODY]);
+      const c0 = await page.locator('#assist .rybox').count();
+      await ask(CO + ' 회신 요약해 줘', '#assist .rybox', '회신 요약 카드가 안 뜸');
+      if ((await sums()) !== s0 + 1) fail('요약 호출이 1회가 아님');
+      const sp = await page.evaluate(() => window.__mock.samples.filter(x => x.prompt.startsWith('[회신 요약]')).at(-1).prompt);
+      if (!sp.includes('1,234,000원')) fail('요약 근거에 쉼표 있는 원문 수치가 없음(snippet을 씀?)');
+      if (sp.includes('원래 메일 인용줄')) fail('인용된 이전 메일이 요약 근거에 들어감');
+      if (sp.includes('tester@example.com')) fail('보낸 사람 주소가 Claude로 나감');
+      const rp = await page.evaluate(() => window.__mock.samples.filter(x => x.prompt.includes('[도우미]')).at(-1).prompt);
+      for (const t of ['회신 요약 규칙', '"replysum"']) if (!rp.includes(t)) fail('규칙 턴에 없음: ' + t);
+      const box = page.locator('#assist .rybox').last();
+      await hasText(box, '«1,234,000원»');
+      await hasText(box, '조정견적서_v2.pdf');
+      await hasText(box, '회신 본문을 Claude에게 보내');
+      const bad = box.locator('.qitem', { hasText:'99일' });
+      await hasText(bad.locator('.qwarn'), '원문에 없는 숫자: 99');
+      if (await bad.locator('input[type=checkbox]').isChecked()) fail('원문에 없는 숫자 줄이 선택된 채로 시작');
+      if (!(await box.locator('.qitem', { hasText:'1,234,000' }).locator('input[type=checkbox]').isChecked())) fail('원문 수치 줄이 선택 해제로 시작');
+      const go = box.getByRole('button', { name:/3단계 메모로 저장 \(2줄\)/ });
+      await go.click();
+      await hasText(page.locator('#assist .abub.sys').last(), '3단계 메모에 회신 요약');
+      await until(async () => ((await docsOf(page, 'projects'))[pid].steps['3'].notes || []).length === notes0 + 1, '메모가 저장 안 됨');
+      const after = (await docsOf(page, 'projects'))[pid], note = after.steps['3'].notes.at(-1).text;
+      if (!note.startsWith('(메일 회신 요약)') || !note.includes('«1,234,000원»') || !note.includes('첨부: 조정견적서_v2.pdf')) fail('메모 내용: ' + note);
+      if (note.includes('99일')) fail('선택 해제한 줄이 저장됨');
+      if (note.includes('납품은 10월 15일부터 가능할 것 같습니다') || note.includes('원래 메일 인용줄')) fail('회신 원문이 저장됨');
+      if (JSON.stringify(after).includes('부가세 별도)입니다')) fail('과제 문서에 회신 원문이 남음');
+      if (after.currentStep !== before.currentStep || after.steps['3'].status !== before.steps['3'].status) fail('단계 상태·currentStep이 바뀜');
+      if ((after.activities || []).length !== (before.activities || []).length) fail('활동이 늘어남');
+      // (4) 과제 모르면 되묻기(열린 과제 없음)
+      await H.closeDrawer(page); await tab(page, 'today');
+      const s1 = await sums();
+      await ask('회신 요약해 줘', '#assist .abub.sys', '과제를 되묻지 않음');
+      await hasText(page.locator('#assist .abub.sys').last(), '어느 과제의 회신인지');
+      if ((await sums()) !== s1) fail('과제를 모르는데 요약함');
+      // (5) 과제 상세 활동 이력 «회신 요약» 버튼 → 도우미에 카드
+      await H.openStep(page, CO, 3);
+      const rb = stepBody(page, 3).locator('.mail').first().locator('.rybtn');
+      if (!(await rb.count())) fail('회신 확인된 활동에 «회신 요약» 버튼이 없음');
+      const c1 = await page.locator('#assist .rybox').count();
+      await rb.click();
+      await until(async () => (await page.locator('#assist .rybox').count()) > c1, '버튼으로 회신 요약 카드가 안 뜸', 15000);
+      if (c1 <= c0) fail('카드 수 이상');
+    } finally { await page.evaluate(() => window.__mock.threadError(null)); await closeAssist(); await H.closeDrawer(page); }
+  });
+  await run.step('C2-46', async () => {
+    // 도우미 회신 요약 보강: 회신이 둘이면 최신만·6000자 넘으면 앞부분만·원문에 없는 «» 인용은 선택 해제·tool_error도 안내만(재시도 없음)
+    const tid = (await page.evaluate(() => window.__mock.sent()))[0].threadId;
+    const LONG = '[[인용오류]] 재조정 견적은 2,345,000원입니다.\n' + '가'.repeat(6100) + '\nZZTAILZZ';
+    const reads = () => page.evaluate(() => window.__mock.calls.filter(c => c.tool === 'get_thread' && c.input.messageFormat === 'PLAIN_TEXT').length);
+    const sums = () => page.evaluate(() => window.__mock.samples.filter(x => x.prompt.startsWith('[회신 요약]')).length);
+    const ask = async (sel, msg) => {
+      const n = await page.locator(sel).count();
+      await page.locator('#as-input').fill(CO + ' 회신 요약해 줘'); await page.locator('#as-input').press('Enter');
+      await until(async () => (await page.locator(sel).count()) > n, msg, 15000);
+      await until(async () => !(await page.locator('#assist .abub.bot', { hasText:'읽는 중' }).count()) && !(await page.locator('#assist .abub.bot', { hasText:'요약하는 중' }).count()), '읽는 중이 안 끝남', 15000);
+    };
+    try {
+      if (!(await page.locator('#assist').isVisible())) await page.locator('#assistBtn').click();
+      await page.locator('#assist').getByRole('button', { name:'새 대화' }).click();
+      await page.evaluate(([t, body]) => window.__mock.reply(t, { body }), [tid, LONG]);
+      const s0 = await sums();
+      await ask('#assist .rybox', '회신 요약 카드가 안 뜸');
+      if ((await sums()) !== s0 + 1) fail('요약 호출이 1회가 아님');
+      const sp = await page.evaluate(() => window.__mock.samples.filter(x => x.prompt.startsWith('[회신 요약]')).at(-1).prompt);
+      if (!sp.includes('2,345,000원') || sp.includes('1,234,000원')) fail('회신이 둘일 때 최신 회신이 아님');
+      if (sp.includes('ZZTAILZZ') || !sp.includes('앞 6000자만')) fail('6000자를 넘는 회신이 잘리지 않음');
+      const box = page.locator('#assist .rybox').last();
+      await hasText(box, '앞 6000자만 요약했습니다');
+      const bad = box.locator('.qitem', { hasText:'원문에없는문구' });
+      await hasText(bad.locator('.qwarn'), '인용이 원문과 다름');
+      if (await bad.locator('input[type=checkbox]').isChecked()) fail('원문에 없는 인용 줄이 선택된 채로 시작');
+      // tool_error: 안내만, 재시도 없음, 요약 없음
+      await page.evaluate(() => window.__mock.threadError('tool_error'));
+      const r0 = await reads(), s1 = await sums();
+      await ask('#assist .abub.sys', '읽기 실패 안내가 없음');
+      await hasText(page.locator('#assist .abub.sys').last(), '이 메일 스레드를 읽을 수 없습니다');
+      await page.waitForTimeout(800);
+      if ((await reads()) !== r0 + 1) fail('tool_error 뒤 재시도함: ' + ((await reads()) - r0) + '회');
+      if ((await sums()) !== s1) fail('읽기 실패인데 요약을 부름');
+    } finally {
+      await page.evaluate(() => window.__mock.threadError(null));
+      await page.evaluate(t => { window.__mock.unreply(t); window.__mock.reply(t, { body:'(목) 회신드립니다.' }); }, tid);
+      await closeAssist(); await H.closeDrawer(page);
+    }
   });
   await run.step('C2-11', async () => {
     m = await openSend(page, CO, 3);

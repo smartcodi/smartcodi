@@ -175,6 +175,17 @@
               { kind:'sw', kindWhy:'(목) 월 구독 SW', name:'[테스트] 견적 MES', model:'QM-1', spec:'', unit:'월(임차)', unitRaw:'개월', qty:3, unitPrice:400000, amount:1200000, note:'(목) 설치 교육 포함' },
             ] } };
       }
+      // 메일·카톡 문구: 과제(업체명)·단계(견적 = 3, «N단계»)·받는 역할(공급·대표/소공인·컨설)을 말에서 흉내. 모르면 ""/0/[](보드가 되묻기)
+      // 본문에 일부러 인사말·맺음말·서명 줄과 [확인 필요]를 섞음 — 보드가 인사·서명을 빼고 다시 붙이는지, 자리표시가 발송을 막는지 확인용
+      if (/메일|카톡/.test(last) && /써|문구/.test(last)){
+        const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));
+        const proj = [...plist.matchAll(/^- (\S+) \| (.+?) \| /gm)].find(([, , co]) => last.includes(co));
+        const step = /견적/.test(last) ? 3 : Number((last.match(/([1-8])단계/) || [])[1] || 0);
+        const roles = [/공급/.test(last) && 'supplier', /대표|소공인/.test(last) && 'sogongin', /컨설/.test(last) && 'consultant'].filter(Boolean);
+        return { reply:'(목) 공급기업에 보낼 문구를 썼습니다. [확인 필요] 1곳. 아래에서 확인하고 «보내기 창 열기»를 눌러 주세요.', card:null, quote:null, diag:null, progress:null, schedule:null, action:'mail',
+          mail:{ projectId: proj ? proj[1] : '', step, roles, subject:'견적서 재발행 요청 (부가세 포함)',
+            body:'(목) 담당님 안녕하세요.\n\n보내 주신 견적서를 부가세 포함 금액으로 다시 발행해 주시기 바랍니다.\n· 회신 기한: [확인 필요]\n\n감사합니다.\n(목) 코디 드림' } };
+      }
       // 잡힌 일정 → 예정일 제안. 날짜: 말 속 YYYY-MM-DD, «모레» = 규칙 턴 [오늘] + 2일(오늘 날짜 전달 확인용), 그 밖엔 ""(보드가 되묻기). 시각 «오후 N시»는 time
       if (/잡혔|잡았/.test(last)){
         const plist = prompt.slice(prompt.lastIndexOf('\n[과제 목록]'), prompt.lastIndexOf('\n[지금 열린 과제]'));

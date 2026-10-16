@@ -158,7 +158,17 @@
   const samples = [];
   const promptOf = input => typeof input === 'string' ? input : input.map(t => t.content).join('\n');
   const sampleFn = async (input, opts = {}) => ({ text: String(await sampleFn.json(input, opts)), truncated:false, modelTierApplied: opts.modelTier || 'default' });
+  // 도우미 대화 응답은 st.assistOuts에 남긴다 — run.mjs가 CASE마다 agent/actions.schema.json으로 검사하고 비운다
   sampleFn.json = async (input, opts = {}) => {
+    const out = await answer(input, opts);
+    const prompt = promptOf(input);
+    if (prompt.includes('[도우미]') && !prompt.startsWith('[작성]') && !prompt.startsWith('[회신 요약]')){
+      (st.assistOuts = st.assistOuts || []).push({ said:(Array.isArray(input) ? input[input.length - 1].content : prompt).split('\n')[0].slice(0, 80), out:clone(out) });
+      save();
+    }
+    return out;
+  };
+  const answer = async (input, opts) => {
     const prompt = promptOf(input);
     if (new TextEncoder().encode(prompt).length > 65536) throw { code:'prompt_too_large', message:'over 64 KiB' };
     if (opts.signal?.aborted) throw { code:'cancelled', message:'aborted' };
@@ -323,6 +333,7 @@
     downloads, calls,
     sent: () => clone(st.sent),
     events: () => clone(st.events),
+    takeAssistOuts(){ const o = st.assistOuts || []; st.assistOuts = []; save(); return clone(o); },
     // 받은 회신 주입. opt = { body, attachments } (없으면 짧은 기본 본문)
     reply(threadId, opt = {}){
       const t = st.threads[threadId];

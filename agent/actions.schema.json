@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SmartCodi 보드 도우미 응답",
+  "description": "assistRules()가 Claude에게 요구하는 JSON 한 개(smartcodi-board.html). 필드를 바꾸면 assistRules()의 JSON 명세, assistSend()의 소비 코드, tests/e2e/mock-claude.js를 같이 고친다. 값의 검증·정규화는 보드의 norm*() 함수가 한다 — 이 스키마는 모양만 정한다. 과제 id가 \"\"이면 보드가 지금 열린 과제를 쓰고, 그것도 없으면 되묻는다.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "reply": { "type": "string" },
+    "action": { "enum": ["none", "register", "draft", "status", "mail", "replysum"] },
+    "projectId": { "type": "string", "description": "quote·draft·status·replysum이 쓰는 과제 id. diag·progress·schedule·mail·delivery는 각 객체 안의 projectId를 쓴다" },
+    "formId": { "type": "string", "description": "action draft의 양식 id(DRAFT_FORMS: log1~log4·plan·result)" },
+    "card": {
+      "description": "명함 읽기 → normCard/cardReview",
+      "type": ["object", "null"],
+      "properties": {
+        "org": { "type": "string" }, "orgType": { "enum": ["sogongin", "supplier", "consultant", "coord", "unknown", ""] }, "orgTypeWhy": { "type": "string" },
+        "name": { "type": "string" }, "title": { "type": "string" }, "mobile": { "type": "string" }, "tel": { "type": "string" },
+        "email": { "type": "string" }, "kakao": { "type": "string" }, "address": { "type": "string" }, "addressDetail": { "type": "string" },
+        "website": { "type": "string" }, "other": { "type": "string" }
+      }
+    },
+    "quote": {
+      "description": "견적서 → normQuote/quoteReview. 과제는 최상위 projectId",
+      "type": ["object", "null"],
+      "properties": {
+        "supplier": { "type": "object", "properties": { "name": { "type": "string" }, "tel": { "type": "string" }, "address": { "type": "string" }, "addressDetail": { "type": "string" }, "bizNo": { "type": "string" } } },
+        "to": { "type": "string" }, "date": { "type": "string" }, "number": { "type": "string" }, "vat": { "enum": ["별도", "포함", ""] },
+        "totals": { "type": "object", "properties": { "supply": { "$ref": "#/$defs/num" }, "vat": { "$ref": "#/$defs/num" }, "total": { "$ref": "#/$defs/num" } } },
+        "items": { "type": "array", "items": { "type": "object", "properties": {
+          "kind": { "enum": ["hw", "sw", ""] }, "kindWhy": { "type": "string" }, "name": { "type": "string" }, "model": { "type": "string" }, "spec": { "type": "string" },
+          "unit": { "type": "string" }, "unitRaw": { "type": "string" }, "qty": { "$ref": "#/$defs/num" }, "unitPrice": { "$ref": "#/$defs/num" }, "amount": { "$ref": "#/$defs/num" }, "note": { "type": "string" } } } }
+      }
+    },
+    "diag": {
+      "description": "방문 메모 → 현장진단표 칸 제안 → normDiag/diagReview. round 0 = 모름(되묻기)",
+      "type": ["object", "null"],
+      "properties": {
+        "projectId": { "type": "string" },
+        "round": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "items": { "type": "object", "additionalProperties": { "type": "string" }, "description": "키 = 그 차수 DIAG 항목명 글자 그대로" }
+      }
+    },
+    "progress": {
+      "description": "방문 결과 → task·산출물 체크·완료일 제안 → normProgress/progressReview. step 0 = 모름",
+      "type": ["object", "null"],
+      "properties": {
+        "projectId": { "type": "string" },
+        "step": { "$ref": "#/$defs/step" },
+        "tasks": { "type": "array", "items": { "type": "object", "properties": { "task": { "type": "string", "description": "STEPS task 문구 글자 그대로" }, "said": { "type": "string" } } } },
+        "docs": { "type": "array", "items": { "type": "object", "properties": { "doc": { "type": "string", "description": "STEPS 산출물명 글자 그대로" }, "said": { "type": "string" } } } },
+        "actual": { "type": "string", "description": "\"오늘\" | \"어제\" | YYYY-MM-DD | \"\"(말하지 않음)" }
+      }
+    },
+    "schedule": {
+      "description": "잡힌 일정 → 예정일 제안 → normSchedule/scheduleReview. 캘린더 등록은 저장 뒤 사람이 버튼으로",
+      "type": ["object", "null"],
+      "properties": {
+        "projectId": { "type": "string" },
+        "step": { "$ref": "#/$defs/step" },
+        "date": { "type": "string", "description": "YYYY-MM-DD 또는 \"\"(짐작 금지)" },
+        "time": { "type": "string", "description": "사용자가 말한 시각 원문(메모로만 남음)" },
+        "said": { "type": "string" }
+      }
+    },
+    "mail": {
+      "description": "메일·카톡 문구 → normMail/mailReview → openSend. 도우미는 보내지 않는다",
+      "type": ["object", "null"],
+      "properties": {
+        "projectId": { "type": "string" },
+        "step": { "$ref": "#/$defs/step" },
+        "roles": { "type": "array", "items": { "enum": ["sogongin", "supplier", "consultant"] } },
+        "subject": { "type": "string" },
+        "body": { "type": "string" }
+      }
+    },
+    "delivery": {
+      "description": "납품 서류 → 기존 자산 갱신 제안 → normDelivery/deliveryReview. 상태는 보드가 docType으로 정한다(DL_TYPES)",
+      "type": ["object", "null"],
+      "properties": {
+        "projectId": { "type": "string" },
+        "docType": { "enum": ["거래명세서", "납품확인서", "설치확인서", ""] },
+        "supplier": { "type": "string" },
+        "date": { "type": "string" },
+        "dateSaid": { "type": "string" },
+        "items": { "type": "array", "items": { "type": "object", "properties": {
+          "name": { "type": "string" }, "model": { "type": "string" }, "qty": { "$ref": "#/$defs/num" }, "serial": { "type": "string" }, "said": { "type": "string" } } } }
+      }
+    }
+  },
+  "required": ["reply", "action"],
+  "allOf": [
+    { "if": { "properties": { "action": { "const": "draft" } } }, "then": { "required": ["projectId", "formId"] } },
+    { "if": { "properties": { "action": { "const": "status" } } }, "then": { "required": ["projectId"] } },
+    { "if": { "properties": { "action": { "const": "replysum" } } }, "then": { "required": ["projectId"] } },
+    { "if": { "properties": { "action": { "const": "mail" } } }, "then": { "required": ["mail"], "properties": { "mail": { "type": "object" } } } }
+  ],
+  "$defs": {
+    "step": { "type": "integer", "minimum": 0, "maximum": 8, "description": "단계 1~8, 0 = 모름(되묻기). N차 방문: 1차 1, 2차 2, 3차 7, 4차 8" },
+    "num": { "type": ["string", "number"], "description": "문서에 적힌 그대로. 없으면 \"\"" }
+  }
+}

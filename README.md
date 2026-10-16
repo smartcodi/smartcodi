@@ -23,6 +23,8 @@
 | `doc/설계/` | 기능 설계 문서 — 화면·구글 캘린더·양식·지도·메일·데이터 모델 |
 | `.claude/agents/` | Claude Code 에이전트 정의 3개 — 구조 점검·도우미 개발·테스트 |
 | `CLAUDE.md` | 개발 규칙·데이터 모델·절차 (Claude Code 작업 지침) |
+| `AGENTS.md` | Agent(보드 도우미) 운영 규칙 |
+| `agent/` | 도우미 응답 계약(`actions.schema.json`)·원칙 문서(`system-prompt.md`, 참고용) |
 
 사업 공고·교재 원본, 한글 양식 원본, 보드 데이터 내보내기는 저장소에 올리지 않습니다(`.gitignore`).
 
@@ -30,7 +32,7 @@
 
 ```bash
 cd tests/e2e
-npm install            # playwright
+npm install            # playwright, ajv(도우미 응답 계약 검사)
 node run.mjs           # 전체 CASE 1~6 (약 2분) → doc/테스트/E2E_시나리오_CASE1-6.xlsx 에 회차 기록
 node run.mjs 2 3       # 일부 CASE
 ```

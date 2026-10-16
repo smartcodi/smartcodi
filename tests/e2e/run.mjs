@@ -3,6 +3,7 @@
 //   node run.mjs 2 3        일부 CASE만 (앞 CASE가 만든 데이터에 의존하지 않도록 각 CASE가 스스로 준비)
 //   node run.mjs 2 --no-xlsx  엑셀에 회차를 쓰지 않음(개발 중 확인용 — 엑셀 기록은 board-tester 에이전트만)
 import { chromium } from 'playwright';
+import Ajv2020 from 'ajv/dist/2020.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -16,6 +17,8 @@ import { CASES } from './scenarios.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..', '..');
 const XLSX = path.join(root, 'doc', '테스트', 'E2E_시나리오_CASE1-6.xlsx');
+// 도우미 응답 계약: 목이 돌려준 도우미 응답을 CASE마다 스키마로 검사한다(어긋나면 CASEn-계약 실패)
+const validAssist = new Ajv2020({ allErrors:true, allowUnionTypes:true }).compile(JSON.parse(fs.readFileSync(path.join(root, 'agent', 'actions.schema.json'), 'utf8')));
 const noXlsx = process.argv.includes('--no-xlsx');
 const only = process.argv.slice(2).map(Number).filter(Boolean);
 const which = only.length ? only : [1, 2, 3, 4, 5, 6];
@@ -58,12 +61,15 @@ for (const n of which){
   const errBefore = pageErrors.length;
   try { await C['case' + n](run, { mobilePage }); }
   catch (e){ run.results.push({ id:key + '-중단', result:'차단', memo:String(e.message || e).slice(0, 300) }); }
+  const outs = await page.evaluate(() => window.__mock.takeAssistOuts());
+  const bad = outs.flatMap(o => validAssist(o.out) ? [] : ['«' + o.said + '» ' + validAssist.errors.map(e => (e.instancePath || '/') + ' ' + e.message).join(', ')]);
+  if (bad.length) run.results.push({ id:key + '-계약', result:'실패', memo:('도우미 응답 ' + outs.length + '건 중 ' + bad.length + '건이 actions.schema.json 위반: ' + bad.join(' / ')).slice(0, 500) });
   // 시나리오에 있는데 실행되지 않은 단계 = 차단
   for (const [id] of CASES[key].rows) if (!run.results.find(r => r.id === id)) run.results.push({ id, result:'차단', memo:'실행되지 않음' });
   const errs = pageErrors.slice(errBefore);
   out.cases[key] = { results:run.results, pageErrors:errs };
   const c = t => run.results.filter(r => r.result === t).length;
-  console.log(`  통과 ${c('통과')} / 실패 ${c('실패')} / 차단 ${c('차단')}` + (errs.length ? ` / 페이지 오류 ${errs.length}: ${errs[0]}` : ''));
+  console.log(`  통과 ${c('통과')} / 실패 ${c('실패')} / 차단 ${c('차단')} · 도우미 응답 계약 ${outs.length - bad.length}/${outs.length}` + (errs.length ? ` / 페이지 오류 ${errs.length}: ${errs[0]}` : ''));
 }
 out.finishedAt = new Date().toISOString();
 await browser.close(); server.close();
